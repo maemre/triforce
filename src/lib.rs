@@ -23,12 +23,13 @@
 //! Coordinates are ordered in lexicographic order, and we normalize regions to
 //! start at the origin in many data structures below.
 
-
 use std::{
     collections::{BTreeSet as Set, *},
     num::NonZeroU8,
     ops::{BitOr, Index},
 };
+
+use serde::{Serialize, Deserialize};
 
 mod fmt;
 mod macros;
@@ -138,8 +139,36 @@ impl BitOr for &Region {
     }
 }
 
+/// Representation of a region for serialization/deserialization.
+#[derive(Serialize, Deserialize)]
+pub struct MaybeRegion(pub Vec<Node>);
+
+impl MaybeRegion {
+    pub fn to_region(mut self) -> Option<Region> {
+	self.0.sort();
+	let l = self.0.len();
+	self.0.dedup();
+
+	if self.0.len() != l {
+	    return None;
+	}
+
+	if let Some(n) = self.0.first() {
+	    if *n != (0, 0) {
+		return None;
+	    }
+	}
+
+	Some(Region::from(self.0))
+    }
+
+    pub fn from_region(r: Region) -> MaybeRegion {
+	MaybeRegion(r.inner)
+    }
+}
+
 // This returns neighbors in an infinite lattice
-fn neighbors(n: &Node) -> [Node; 6] {
+pub fn neighbors(n: &Node) -> [Node; 6] {
     let (x, y) = *n;
     [
         (x - 1, y - 1),
@@ -252,58 +281,105 @@ impl Color {
     }
 }
 
-// The graph is represented as a 2D array
-#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+/// A graph in the lattice.  This is just a set of nodes.
+#[derive(PartialEq, Eq, PartialOrd, Ord, Hash, Debug, Clone)]
 pub struct Graph {
-    color: Vec<Vec<Option<Color>>>,
+    nodes: Vec<Node>,
+    // an ordinal associated with each node, according to the standard
+    // ordering. this allows representing data about nodes using vectors.
+    indices: BTreeMap<Node, usize>,
+}
+
+impl Graph {
+    pub fn from(r: Region) -> Graph {
+	let mut nodes = r.inner;
+	nodes.sort();
+	let indices = nodes.iter().enumerate().map(|(i, n)| (*n, i)).collect();
+	Graph {
+	    nodes,
+	    indices 
+	}
+    }
+
+    // Create a triangle of side length N
+    pub fn triangle(n: usize) -> Graph {
+        debug_assert!(n > 0);
+	let nodes: Vec<Node> = (0..n).flat_map(|i| (0..(n - i)).map(move |j| (i as isize, (i + 2 * j) as isize))).collect();
+	let indices = nodes.iter().enumerate().map(|(i, n)| (*n, i)).collect();
+	Graph {
+	    nodes,
+	    indices,
+	}
+    }
+
+    fn node_at(&self, i: usize) -> Node {
+	self.nodes[i]
+    }
+
+    fn contains(&self, n: &Node) -> bool {
+	self.indices.contains_key(n)
+    }
+
+    fn get_index(&self, n: &Node) -> Option<usize> {
+	self.indices.get(n).copied()
+    }
+
+    pub fn len(&self) -> usize {
+	self.nodes.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+	self.nodes.is_empty()
+    }
+
+    pub fn into_region(self) -> Region {
+	Region::from(self.nodes)
+    }
+}
+
+/// Tiling of a graph.  We borrow the graph to avoid copying it.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub struct Tiling<'graph> {
+    graph: &'graph Graph,
+    // color of each node, represented as a 2D array, so we might generate
+    // unused slots in this list but it makes lookups faster.
+    color: Vec<Option<Color>>,
     next_uncolored_cell: Option<Node>,
     next_color: Color,
 }
 
-impl Graph {
-    // Create a triangle of size N
-    fn new(n: usize) -> Graph {
-        debug_assert!(n > 0);
-        Graph {
-            color: (0..n).map(|i| vec![None; n - i]).collect(),
+impl<'g> Tiling<'g> {
+    fn of_graph(graph: &Graph) -> Tiling {
+        Tiling {
+	    graph,
+            color: vec![None; graph.nodes.len()],
             next_uncolored_cell: Some((0, 0)),
             next_color: Color(NonZeroU8::new(1).unwrap()),
         }
     }
-
+    
     fn len(&self) -> usize {
         self.color.len()
     }
 
     fn set_color(&mut self, n: Node, color: Color) {
-        self.color[n.0 as usize][((n.1 - n.0) / 2) as usize] = Some(color);
+	self.color[self.graph.indices[&n]] = Some(color);
         if self.next_uncolored_cell == Some(n) {
             // find the next colored cell
             self.next_uncolored_cell = None;
-            let (x, y) = n;
 
-            // search current column
-            for (j, color) in self.color[x as usize][(((y - x) / 2) as usize)..]
-                .iter()
-                .enumerate()
-            {
-                if color.is_none() {
-                    self.next_uncolored_cell = Some((x, 2 * j as isize + y));
+	    for i in self.graph.indices[&n]..self.graph.nodes.len() {
+		if self.color[i].is_none() {
+		    self.next_uncolored_cell = Some(self.graph.node_at(i));
                     // println!("\tinserted {n:?}, next uncolored cell: {:?}", self.next_uncolored_cell);
                     return;
-                }
-            }
-            // search the rest of the columns
-            for x in x..(self.color.len() as isize) {
-                for (j, color) in self.color[x as usize].iter().enumerate() {
-                    if color.is_none() {
-                        self.next_uncolored_cell = Some((x, 2 * j as isize + x));
-                        // println!("\tinserted {n:?}, next uncolored cell: {:?}", self.next_uncolored_cell);
-                        return;
-                    }
-                }
-            }
+		}
+	    }
         }
+    }
+
+    fn get_color(&mut self, n: &Node) -> Option<Color> {
+	self.color[self.graph.get_index(n)?]
     }
 
     // renumber the colors so that permutations of colors are mapped to the same coloring. we do
@@ -313,14 +389,12 @@ impl Graph {
         let mut coloring = HashMap::<Color, Color>::new();
         let mut next_color = Color(NonZeroU8::new(1).unwrap());
 
-        for v in &mut self.color {
-            for c in v.iter_mut().flatten() {
+        for c in self.color.iter_mut().flatten() {
                 *c = *coloring.entry(*c).or_insert_with(|| {
                     let c = next_color;
                     next_color.increment();
                     c
                 });
-            }
         }
 
         // todo: sanity check for colorings?
@@ -331,14 +405,13 @@ impl Graph {
         mut self,
         (x0, y0): Node,
         r: I,
-    ) -> Option<Graph> {
+    ) -> Option<Tiling<'g>> {
         for (x, y) in r {
             let node = (x0 + *x, y0 + *y);
-            let j = (node.1 - node.0) / 2;
-            if node.0 < 0 || !(0..(self.len() as isize - node.0)).contains(&j) {
-                return None;
-            }
-            if self[node].is_some() {
+
+	    // Check that this node is in-bounds and uncolored.
+	    // TODO(maemre): validate this reasoning for bounds checking, extend to the "soft region"
+            if (!self.graph.contains(&node)) || self.get_color(&node).is_some() {
                 return None;
             }
             self.set_color(node, self.next_color);
@@ -354,27 +427,27 @@ impl Graph {
         }
     }
 
-    // Enumerate all partial colorings of length `n` with region size `r`
-    pub fn enumerate(n: usize, r: usize) -> HashSet<Graph> {
-        assert!(n > 0);
-        assert!(r > 0);
+    // Enumerate all partial colorings of the given graph with given tile size
+    pub fn enumerate(g: &'g Graph, r: usize) -> HashSet<Tiling<'g>> {
+        assert!(! g.nodes.is_empty());
+	assert!(r > 0);
 
         let mut visited = HashSet::new();
-        let mut worklist = vec![Graph::new(n)];
+        let mut worklist = vec![Tiling::of_graph(g)];
 
         let regions = regions(r);
 
-        while let Some(g) = worklist.pop() {
-            if !visited.insert(g.clone()) {
+        while let Some(tiling) = worklist.pop() {
+            if !visited.insert(tiling.clone()) {
                 continue;
             }
 
             // println!("processing\n{g}");
-            if let Some(n) = g.next_uncolored_cell {
+            if let Some(n) = tiling.next_uncolored_cell {
                 // println!("next uncolored cell: {n:?}");
                 for r in &regions {
                     // println!("trying {r:?}");
-                    if let Some(mut g_new) = g.clone().try_insert(n, r) {
+                    if let Some(mut g_new) = tiling.clone().try_insert(n, r) {
                         // println!("generated:\n{g_new}");
                         g_new.normalize();
                         // println!("normalized:\n{g_new}");
@@ -393,7 +466,7 @@ impl Graph {
         recomb: &BTreeMap<Region, Set<(Region, Region)>>,
         r1: &Region,
         r2: &Region,
-    ) -> Vec<Graph> {
+    ) -> Vec<Tiling<'g>> {
         // Get the colors
         let c1 = self[*r1.first().unwrap()].unwrap();
         let c2 = self[*r2.first().unwrap()].unwrap();
@@ -430,14 +503,14 @@ impl Graph {
     }
 
     // Find the graphs with region size `k` reachable from this graph by recombining graphs
-    pub fn reachable(&self, k: usize) -> HashSet<Graph> {
+    pub fn reachable(&self, k: usize) -> HashSet<Tiling<'g>> {
         let n_colors = self.next_color.0.get() as usize - 1;
         let n = self.len();
 
         assert_eq!(
             n_colors * k,
-            n * (n + 1) / 2,
-            "n_colors = {n_colors}, n = {}, k = {k}\n{self}",
+            self.len(),
+            "n_colors = {n_colors}, n_tiles = {}, k = {k}\n{self}",
             self.len()
         );
         let mut visited = HashSet::new();
@@ -457,11 +530,8 @@ impl Graph {
             // Extract regions
             let mut regions: Vec<Region> = vec![Region::new(); n_colors];
 
-            for (x, v) in g.color.iter().enumerate() {
-                for (j, c) in v.iter().enumerate() {
-                    regions[c.unwrap().0.get() as usize - 1]
-                        .insert((x as isize, (2 * j + x) as isize));
-                }
+            for (j, c) in g.color.iter().enumerate() {
+                    regions[c.unwrap().0.get() as usize - 1].insert(g.graph.node_at(j));
             }
 
             // Select a pair of regions up to ordering
@@ -489,9 +559,13 @@ fn flip(node: Node) -> Node {
     (-node.0, -node.1)
 }
 
-impl Index<Node> for Graph {
+impl<'g> Index<Node> for Tiling<'g> {
     type Output = Option<Color>;
     fn index(&self, n: Node) -> &Self::Output {
-        &self.color[n.0 as usize][((n.1 - n.0) / 2) as usize]
+	// eprintln!("node: {n:?}");
+	// eprintln!("graph: {:?}", self.graph);
+	// eprintln!("{}", self.graph.indices[&n]);
+	// eprintln!("{}", self.color.len());
+        &self.color[self.graph.indices[&n]]
     }
 }

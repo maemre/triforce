@@ -5,9 +5,13 @@ fn main() {
         let mut v = r.iter().collect::<Vec<_>>();
         v.sort();
         println!("{v:?}");
+	println!("{}", serde_json::to_string(&MaybeRegion::from_region(r.clone())).unwrap());
     }
 
-    for g in Graph::enumerate(3, 3) {
+    println!("triangle(3): {}", serde_json::to_string(&MaybeRegion::from_region(Graph::triangle(3).into_region())).unwrap());
+
+
+    for g in Tiling::enumerate(&Graph::triangle(3), 3) {
         println!("{g}\n");
     }
 
@@ -31,7 +35,8 @@ fn main() {
 		break;
 	    }
             // println!("{k}");
-            let gs = Graph::enumerate(n, k);
+	    let triangle = Graph::triangle(n);
+            let gs = Tiling::enumerate(&triangle, k);
             let complete = gs
                 .iter()
                 .filter(|g| g.is_complete())

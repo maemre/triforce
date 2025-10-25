@@ -15,19 +15,21 @@ impl Display for Color {
     }
 }
 
-impl Display for Graph {
+impl<'g> Display for Tiling<'g> {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
-        for (i, v) in self.color.iter().enumerate() {
-            write!(f, "{}", " ".repeat(i))?;
-            for color in v {
-                if let Some(c) = color {
-                    write!(f, " {:x}", c.0)?;
-                } else {
-                    write!(f, " .")?;
-                }
-            }
-            writeln!(f)?;
-        }
-        Ok(())
+	// TODO: extract the bounding box and draw the graph
+	Debug::fmt(self, f)
+        // for (i, v) in self.color.iter().enumerate() {
+        //     write!(f, "{}", " ".repeat(i))?;
+        //     for color in v {
+        //         if let Some(c) = color {
+        //             write!(f, " {:x}", c.0)?;
+        //         } else {
+        //             write!(f, " .")?;
+        //         }
+        //     }
+        //     writeln!(f)?;
+        // }
+        // Ok(())
     }
 }

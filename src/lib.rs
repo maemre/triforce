@@ -195,7 +195,7 @@ fn shift(n: Node, r: &Region) -> Region {
 //
 // - values are potential ways of splitting that region into two regions of size n
 //
-fn recomb(n: usize) -> BTreeMap<Region, Set<(Region, Region)>> {
+pub fn recomb(n: usize) -> BTreeMap<Region, Set<(Region, Region)>> {
     // Generate all regions of size n
     let rs = regions(n);
 

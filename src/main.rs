@@ -1,9 +1,7 @@
 use triforce::*;
 
 fn main() {
-    let k = 3;
-    // list regions of size k
-    for r in regions(k) {
+    for r in recomb(2).keys() {
         let mut v = r.iter().collect::<Vec<_>>();
         v.sort();
         println!("{v:?}");
@@ -29,6 +27,9 @@ fn main() {
             if (n * (n + 1) / 2) % k != 0 {
                 continue;
             }
+	    if n == 8 && k > 3 {
+		break;
+	    }
             // println!("{k}");
             let gs = Graph::enumerate(n, k);
             let complete = gs

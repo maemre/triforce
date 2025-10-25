@@ -19,6 +19,9 @@
 //! (0,4)
 //!
 //! ```
+//!
+//! Coordinates are ordered in lexicographic order, and we normalize regions to
+//! start at the origin in many data structures below.
 
 
 use std::{
@@ -228,13 +231,20 @@ pub fn recomb(n: usize) -> BTreeMap<Region, Set<(Region, Region)>> {
                         let offset = (neighbor.0 - cell2.0, neighbor.1 - cell2.1);
                         if seen_shift.insert(offset) {
                             let shifted = shift(offset, r2);
+			    if shifted.iter().any(|n| *n < (0, 0)) {
+				// if the shifted region has a node < (0, 0),
+				// then we can skip this recomb because it is
+				// inaccessible by later algorithms (they always
+				// use a region that starts at the origin)
+				continue;
+			    }
+
                             let new_r = &shifted | r1;
                             if new_r.len() == 2 * n {
                                 // there are no collisions, this is a valid combination
                                 //
                                 // note: we need to insert only one of the pairs because the
                                 // regions will be renumbered for normalization later.
-                                //
                                 result
                                     .entry(new_r)
                                     .or_default()

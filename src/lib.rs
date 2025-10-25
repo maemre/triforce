@@ -31,28 +31,12 @@ use std::{
 };
 
 mod fmt;
+mod macros;
+
 #[allow(unused_imports)]
 pub use fmt::*;
-
-#[macro_export]
-macro_rules! debug_only {
-    {$($arg:tt)*} => {
-        #[cfg(debug_assertions)]
-        {
-            $($arg)*
-        }
-    };
-}
-
-#[macro_export]
-macro_rules! debug {
-    ($($arg:tt)*) => {
-        #[cfg(debug_assertions)]
-        {
-            eprintln!($($arg)*);
-        }
-    };
-}
+#[allow(unused_imports)]
+use macros::*;
 
 // A node is just a pair of coordinates
 type Node = (isize, isize);

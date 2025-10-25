@@ -23,10 +23,13 @@
 
 use std::{
     collections::{BTreeSet as Set, *},
-    fmt::{Debug, Display},
     num::NonZeroU8,
     ops::{BitOr, Index},
 };
+
+mod fmt;
+#[allow(unused_imports)]
+pub use fmt::*;
 
 #[macro_export]
 macro_rules! debug {
@@ -97,12 +100,6 @@ impl Region {
         self.inner.append(&mut r2.inner);
         self.inner.sort();
         self.inner.dedup();
-    }
-}
-
-impl Debug for Region {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        self.inner.fmt(f)
     }
 }
 
@@ -248,12 +245,6 @@ pub struct Color(NonZeroU8);
 impl Color {
     fn increment(&mut self) {
         self.0 = self.0.checked_add(1).unwrap();
-    }
-}
-
-impl Display for Color {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.0.get())
     }
 }
 
@@ -498,21 +489,3 @@ impl Index<Node> for Graph {
         &self.color[n.0 as usize][((n.1 - n.0) / 2) as usize]
     }
 }
-
-impl std::fmt::Display for Graph {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        for (i, v) in self.color.iter().enumerate() {
-            write!(f, "{}", " ".repeat(i))?;
-            for color in v {
-                if let Some(c) = color {
-                    write!(f, " {:x}", c.0)?;
-                } else {
-                    write!(f, " .")?;
-                }
-            }
-            writeln!(f)?;
-        }
-        Ok(())
-    }
-}
-

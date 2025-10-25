@@ -7,9 +7,9 @@
 //! - y is odd if x is odd.
 //! - x is ordered left-to-right
 //! - y is ordered top-to-bottom
-//! 
+//!
 //! So, the coordinates look like
-//! 
+//!
 //! ```ignore
 //!
 //! (0,0)
@@ -30,6 +30,16 @@ use std::{
 mod fmt;
 #[allow(unused_imports)]
 pub use fmt::*;
+
+#[macro_export]
+macro_rules! debug_only {
+    {$($arg:tt)*} => {
+        #[cfg(debug_assertions)]
+        {
+            $($arg)*
+        }
+    };
+}
 
 #[macro_export]
 macro_rules! debug {
@@ -399,11 +409,13 @@ impl Graph {
         let mut combined = shift(flip(origin), r1);
         combined.append(&mut shift(flip(origin), r2));
 
-        debug!("r1: {r1:?}");
-        debug!("r2: {r2:?}");
-        debug!("combined: {combined:?}");
-        debug!("self:\n{self}");
-        debug!("c1: {c1}, c2: {c2}");
+	debug_only! {
+            eprintln!("r1: {r1:?}");
+            eprintln!("r2: {r2:?}");
+            eprintln!("combined: {combined:?}");
+            eprintln!("self:\n{self}");
+            eprintln!("c1: {c1}, c2: {c2}");
+	}
 
         if let Some(new_splits) = recomb.get(&combined) {
             debug!("generated:");
@@ -437,9 +449,9 @@ impl Graph {
         let mut visited = HashSet::new();
         let mut worklist = vec![self.clone()];
         let recomb = recomb(k);
-	if cfg!(debug_assertions) {
+	debug_only! {
             for (r1, rs) in &recomb {
-		debug!("{r1:?}: {rs:?}");
+		eprintln!("{r1:?}: {rs:?}");
             }
 	}
 

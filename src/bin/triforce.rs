@@ -1,7 +1,6 @@
 use clap::{Parser, Subcommand};
 use triforce::*;
 
-/// Example CLI that accepts either a file or a number as input.
 #[derive(Parser, Debug)]
 #[command(name = "triforce", version)]
 struct Cli {

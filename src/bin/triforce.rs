@@ -1,51 +1,22 @@
-use clap::{Parser, Subcommand};
+use clap::Parser;
 use triforce::*;
+use triforce::cli::*;
 
 #[derive(Parser, Debug)]
 #[command(name = "triforce", version)]
 struct Cli {
     /// The graph to load
-    #[command(subcommand)]
-    graph: InputGraph,
+    #[arg(required = true)]
+    graph: GraphSource,
 
     /// Size of the tiles to tile the graph with
     #[arg(required = true)]
     tile_size: usize,
 }
 
-#[derive(Subcommand, Debug)]
-enum InputGraph {
-    /// Read input from a file
-    FromFile {
-        /// Path to the file
-        #[arg(value_name = "FILE")]
-        file: String,
-    },
-
-    /// Create a triangle with given side length
-    Triangle {
-        /// Side length
-        #[arg(value_name = "N")]
-        n: usize,
-    },
-}
-
 fn main() {
     let cli = Cli::parse();
-    let graph = match cli.graph {
-        InputGraph::FromFile { file } => {
-            let region =
-		serde_json::from_slice::<MaybeRegion>(
-		    &std::fs::read(file)
-			.expect("could not read the input file")
-		)
-		.expect("the input file is not a well-formed description of a region")
-		.to_region()
-		.expect("the input region is not well-structured (does not start at origin or has duplicates)");
-            Graph::from(region)
-        }
-        InputGraph::Triangle { n } => Graph::triangle(n),
-    };
+    let graph = read_graph(cli.graph);
 
     let k = cli.tile_size;
 

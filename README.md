@@ -42,6 +42,8 @@ Regions are normalized so that the smallest node is the origin.
 The program `exp` runs some assorted experiments on triangles with specific side
 lengths.
 
+## Enumerating tilings
+
 The main program `triforce` takes a given graph and tile size, and it calculates
 the following:
 1. All partial tilings.
@@ -62,20 +64,38 @@ cargo run --release --bin triforce -- --help
 Pass the arguments like below:
 
 ```
-cargo run --release --bin triforce -- <tile-size> <graph>
+cargo run --release --bin triforce -- <graph> <tile-size>
 ```
 
 For example, the command below runs it on a triangle of side-length 5 and tile size of 3.
 
 ```
-cargo run --release --bin triforce -- 3 triangle 5
+cargo run --release --bin triforce -- triangle=5 3
 ```
 
 
 The command below runs it on a graph stored in `fixed-region.json` and tile size of 3.
 
 ```
-cargo run --release --bin triforce -- 3 from-file fixed-region.json
+cargo run --release --bin triforce -- file=fixed-region.json 3
+```
+
+## Generating coverings
+
+The `gen-covers` program takes 3 arguments:
+- A graph to cover (a.k.a., a fixed region).
+- Allowed extensions of the graph, this is a second graph.
+- A tile size.
+
+Then, it enumerates all *minimal coverings* of the graph using tiles of the given size.
+
+For example, the following command calculates all minimal coverings of a
+triangle of side-length 3 using 3-tiles that are contained in a triangle of
+side-length 5 where both triangles are hinged at the origin and facing the same
+direction.
+
+```
+cargo run --release --bin gen-covers -- triangle=3 triangle=5 3
 ```
 
 ## Graph file format

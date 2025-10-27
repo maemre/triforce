@@ -33,6 +33,7 @@ use serde::{Serialize, Deserialize};
 
 mod fmt;
 mod macros;
+pub mod cli;
 
 #[allow(unused_imports)]
 pub use fmt::*;
@@ -98,6 +99,18 @@ impl Region {
         self.inner.append(&mut r2.inner);
         self.inner.sort();
         self.inner.dedup();
+    }
+
+    /// Neighbors of this region.
+    ///
+    /// For an empty region, this method returns the set that contains the
+    /// origin.
+    pub fn neighbors(&self) -> Set<Node> {
+        if self.is_empty() {
+            Set::from([(0, 0)])
+        } else {
+            self.inner.iter().flat_map(neighbors).collect()
+        }
     }
 }
 
@@ -457,6 +470,67 @@ impl<'g> Tiling<'g> {
             }
         }
 
+        visited
+    }
+
+    /// Enumerate all *minimal* covers of the given graph that:
+    ///
+    /// 1. use tiles of given size, and
+    /// 2. are contained in the given extension graph.
+    ///
+    /// Requirements:
+    /// - g must be non-empty.
+    /// - extension must contain g.
+    /// - tile_size must be positive.
+    ///
+    /// This method returns a set of regions because we deliberately forget
+    /// different tilings for the same region.
+    pub fn min_covers(g: &'g Graph, extension: &'g Graph, tile_size: usize) -> HashSet<Region> {
+        assert!(! g.nodes.is_empty());
+	assert!(tile_size > 0);
+
+        assert!(g.nodes.iter().all(|n| extension.contains(n)), "the extension must be a superset of the graph");
+
+        debug!("{:?}", g);
+        debug!("{:?}", extension);
+
+        // we don't care about the actual tilings so we can work on regions
+        let mut visited = HashSet::new();
+        let mut worklist = vec![Region::new()];
+
+        let tiles = regions(tile_size);
+
+        while let Some(region) = worklist.pop() {
+            if !visited.insert(region.clone()) {
+                continue;
+            }
+
+            debug!("{:#?}", region.neighbors());
+
+            // consider only the neighbors in the graph, otherwise the added
+            // tile is not guaranteed to be in a minimal cover.
+            for n in region.neighbors().into_iter().filter(|n| g.contains(n)) {
+                debug!("considering neighbor {n:?}");
+                for t in &tiles {
+                    let shifted = shift(n, t);
+                    debug!("got tile {t:?} -> {shifted:?}");
+
+                    // add only valid tiles that:
+                    // - do not intersect with the region, and
+                    // - are contained in the extension
+                    if shifted.iter().all(|n| (! region.contains(n)) && extension.contains(n)) {
+                        let combined = &region | &shifted;
+                        debug!("new region: {combined:?}");
+                        if ! visited.contains(&combined) {
+                            worklist.push(combined);
+                        }
+                    }
+                }
+            }
+
+        }
+
+        visited.retain(|cover| g.nodes.iter().all(|n| cover.contains(n)));
         visited
     }
 

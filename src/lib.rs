@@ -329,6 +329,10 @@ impl Graph {
 	self.nodes[i]
     }
 
+    pub fn nodes(&self) -> &Vec<Node> {
+        &self.nodes
+    }
+
     fn contains(&self, n: &Node) -> bool {
 	self.indices.contains_key(n)
     }

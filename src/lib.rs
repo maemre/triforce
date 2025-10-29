@@ -41,7 +41,7 @@ pub use fmt::*;
 use macros::*;
 
 // A node is just a pair of coordinates
-type Node = (isize, isize);
+pub type Node = (isize, isize);
 
 // A region is just a (connected) set of nodes
 #[derive(Eq, PartialEq, Ord, PartialOrd, Hash, Clone)]
@@ -333,7 +333,7 @@ impl Graph {
         &self.nodes
     }
 
-    fn contains(&self, n: &Node) -> bool {
+    pub fn contains(&self, n: &Node) -> bool {
 	self.indices.contains_key(n)
     }
 
@@ -395,7 +395,7 @@ impl<'g> Tiling<'g> {
         }
     }
 
-    fn get_color(&mut self, n: &Node) -> Option<Color> {
+    pub fn color(&self, n: &Node) -> Option<Color> {
 	self.color[self.graph.get_index(n)?]
     }
 
@@ -428,7 +428,7 @@ impl<'g> Tiling<'g> {
 
 	    // Check that this node is in-bounds and uncolored.
 	    // TODO(maemre): validate this reasoning for bounds checking, extend to the "soft region"
-            if (!self.graph.contains(&node)) || self.get_color(&node).is_some() {
+            if (!self.graph.contains(&node)) || self.color(&node).is_some() {
                 return None;
             }
             self.set_color(node, self.next_color);

@@ -5,11 +5,16 @@ fn main() {
         let mut v = r.iter().collect::<Vec<_>>();
         v.sort();
         println!("{v:?}");
-	println!("{}", serde_json::to_string(&MaybeRegion::from_region(r.clone())).unwrap());
+        println!(
+            "{}",
+            serde_json::to_string(&MaybeRegion::from_region(r.clone())).unwrap()
+        );
     }
 
-    println!("triangle(3): {}", serde_json::to_string(&MaybeRegion::from_region(Graph::triangle(3).into_region())).unwrap());
-
+    println!(
+        "triangle(3): {}",
+        serde_json::to_string(&MaybeRegion::from_region(Graph::triangle(3).into_region())).unwrap()
+    );
 
     for g in Tiling::enumerate(&Graph::triangle(3), 3) {
         println!("{g}\n");
@@ -31,16 +36,13 @@ fn main() {
             if (n * (n + 1) / 2) % k != 0 {
                 continue;
             }
-	    if n == 8 && k > 3 {
-		break;
-	    }
+            if n == 8 && k > 3 {
+                break;
+            }
             // println!("{k}");
-	    let triangle = Graph::triangle(n);
+            let triangle = Graph::triangle(n);
             let gs = Tiling::enumerate(&triangle, k);
-            let complete = gs
-                .iter()
-                .filter(|g| g.is_complete())
-                .collect::<Vec<_>>();
+            let complete = gs.iter().filter(|g| g.is_complete()).collect::<Vec<_>>();
             let first = (*complete.iter().min().unwrap()).clone();
             let gs_len = gs.len();
             let complete_len = complete.len();

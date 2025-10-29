@@ -1,6 +1,6 @@
 use clap::Parser;
-use triforce::*;
 use triforce::cli::*;
+use triforce::*;
 
 #[derive(Parser, Debug)]
 #[command(name = "triforce", version)]
@@ -28,7 +28,10 @@ fn main() {
 
     let tilings = Tiling::enumerate(&graph, k);
     println!("partial tilings:      {:>8}", tilings.len());
-    let complete = tilings.iter().filter(|g| g.is_complete()).collect::<Vec<_>>();
+    let complete = tilings
+        .iter()
+        .filter(|g| g.is_complete())
+        .collect::<Vec<_>>();
     println!("complete tilings:     {:>8}", complete.len());
     let first = (*complete.iter().min().unwrap()).clone();
     drop(complete);

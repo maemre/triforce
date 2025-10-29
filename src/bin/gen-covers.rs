@@ -1,6 +1,6 @@
 use clap::Parser;
-use triforce::*;
 use triforce::cli::*;
+use triforce::*;
 
 /// Generate minimal covers of the given graph (possible tilings that use any
 /// nodes from extensions to cover graph)

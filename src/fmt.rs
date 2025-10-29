@@ -17,8 +17,8 @@ impl Display for Color {
 
 impl<'g> Display for Tiling<'g> {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
-	// TODO: extract the bounding box and draw the graph
-	Debug::fmt(self, f)
+        // TODO: extract the bounding box and draw the graph
+        Debug::fmt(self, f)
         // for (i, v) in self.color.iter().enumerate() {
         //     write!(f, "{}", " ".repeat(i))?;
         //     for color in v {

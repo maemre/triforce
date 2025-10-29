@@ -29,11 +29,11 @@ use std::{
     ops::{BitOr, Index},
 };
 
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 
+pub mod cli;
 mod fmt;
 mod macros;
-pub mod cli;
 
 #[allow(unused_imports)]
 pub use fmt::*;
@@ -88,7 +88,7 @@ impl Region {
     }
 
     pub fn is_empty(&self) -> bool {
-	self.inner.is_empty()
+        self.inner.is_empty()
     }
 
     pub fn first(&self) -> Option<&Node> {
@@ -158,25 +158,25 @@ pub struct MaybeRegion(pub Vec<Node>);
 
 impl MaybeRegion {
     pub fn to_region(mut self) -> Option<Region> {
-	self.0.sort();
-	let l = self.0.len();
-	self.0.dedup();
+        self.0.sort();
+        let l = self.0.len();
+        self.0.dedup();
 
-	if self.0.len() != l {
-	    return None;
-	}
+        if self.0.len() != l {
+            return None;
+        }
 
-	if let Some(n) = self.0.first() {
-	    if *n != (0, 0) {
-		return None;
-	    }
-	}
+        if let Some(n) = self.0.first() {
+            if *n != (0, 0) {
+                return None;
+            }
+        }
 
-	Some(Region::from(self.0))
+        Some(Region::from(self.0))
     }
 
     pub fn from_region(r: Region) -> MaybeRegion {
-	MaybeRegion(r.inner)
+        MaybeRegion(r.inner)
     }
 }
 
@@ -257,13 +257,13 @@ pub fn recomb(n: usize) -> BTreeMap<Region, Set<(Region, Region)>> {
                         let offset = (neighbor.0 - cell2.0, neighbor.1 - cell2.1);
                         if seen_shift.insert(offset) {
                             let shifted = shift(offset, r2);
-			    if shifted.iter().any(|n| *n < (0, 0)) {
-				// if the shifted region has a node < (0, 0),
-				// then we can skip this recomb because it is
-				// inaccessible by later algorithms (they always
-				// use a region that starts at the origin)
-				continue;
-			    }
+                            if shifted.iter().any(|n| *n < (0, 0)) {
+                                // if the shifted region has a node < (0, 0),
+                                // then we can skip this recomb because it is
+                                // inaccessible by later algorithms (they always
+                                // use a region that starts at the origin)
+                                continue;
+                            }
 
                             let new_r = &shifted | r1;
                             if new_r.len() == 2 * n {
@@ -305,28 +305,24 @@ pub struct Graph {
 
 impl Graph {
     pub fn from(r: Region) -> Graph {
-	let mut nodes = r.inner;
-	nodes.sort();
-	let indices = nodes.iter().enumerate().map(|(i, n)| (*n, i)).collect();
-	Graph {
-	    nodes,
-	    indices 
-	}
+        let mut nodes = r.inner;
+        nodes.sort();
+        let indices = nodes.iter().enumerate().map(|(i, n)| (*n, i)).collect();
+        Graph { nodes, indices }
     }
 
     // Create a triangle of side length N
     pub fn triangle(n: usize) -> Graph {
         debug_assert!(n > 0);
-	let nodes: Vec<Node> = (0..n).flat_map(|i| (0..(n - i)).map(move |j| (i as isize, (i + 2 * j) as isize))).collect();
-	let indices = nodes.iter().enumerate().map(|(i, n)| (*n, i)).collect();
-	Graph {
-	    nodes,
-	    indices,
-	}
+        let nodes: Vec<Node> = (0..n)
+            .flat_map(|i| (0..(n - i)).map(move |j| (i as isize, (i + 2 * j) as isize)))
+            .collect();
+        let indices = nodes.iter().enumerate().map(|(i, n)| (*n, i)).collect();
+        Graph { nodes, indices }
     }
 
     fn node_at(&self, i: usize) -> Node {
-	self.nodes[i]
+        self.nodes[i]
     }
 
     pub fn nodes(&self) -> &Vec<Node> {
@@ -334,23 +330,23 @@ impl Graph {
     }
 
     pub fn contains(&self, n: &Node) -> bool {
-	self.indices.contains_key(n)
+        self.indices.contains_key(n)
     }
 
     fn get_index(&self, n: &Node) -> Option<usize> {
-	self.indices.get(n).copied()
+        self.indices.get(n).copied()
     }
 
     pub fn len(&self) -> usize {
-	self.nodes.len()
+        self.nodes.len()
     }
 
     pub fn is_empty(&self) -> bool {
-	self.nodes.is_empty()
+        self.nodes.is_empty()
     }
 
     pub fn into_region(self) -> Region {
-	Region::from(self.nodes)
+        Region::from(self.nodes)
     }
 }
 
@@ -368,35 +364,35 @@ pub struct Tiling<'graph> {
 impl<'g> Tiling<'g> {
     fn of_graph(graph: &Graph) -> Tiling {
         Tiling {
-	    graph,
+            graph,
             color: vec![None; graph.nodes.len()],
             next_uncolored_cell: Some((0, 0)),
             next_color: Color(NonZeroU8::new(1).unwrap()),
         }
     }
-    
+
     fn len(&self) -> usize {
         self.color.len()
     }
 
     fn set_color(&mut self, n: Node, color: Color) {
-	self.color[self.graph.indices[&n]] = Some(color);
+        self.color[self.graph.indices[&n]] = Some(color);
         if self.next_uncolored_cell == Some(n) {
             // find the next colored cell
             self.next_uncolored_cell = None;
 
-	    for i in self.graph.indices[&n]..self.graph.nodes.len() {
-		if self.color[i].is_none() {
-		    self.next_uncolored_cell = Some(self.graph.node_at(i));
+            for i in self.graph.indices[&n]..self.graph.nodes.len() {
+                if self.color[i].is_none() {
+                    self.next_uncolored_cell = Some(self.graph.node_at(i));
                     // println!("\tinserted {n:?}, next uncolored cell: {:?}", self.next_uncolored_cell);
                     return;
-		}
-	    }
+                }
+            }
         }
     }
 
     pub fn color(&self, n: &Node) -> Option<Color> {
-	self.color[self.graph.get_index(n)?]
+        self.color[self.graph.get_index(n)?]
     }
 
     // renumber the colors so that permutations of colors are mapped to the same coloring. we do
@@ -407,11 +403,11 @@ impl<'g> Tiling<'g> {
         let mut next_color = Color(NonZeroU8::new(1).unwrap());
 
         for c in self.color.iter_mut().flatten() {
-                *c = *coloring.entry(*c).or_insert_with(|| {
-                    let c = next_color;
-                    next_color.increment();
-                    c
-                });
+            *c = *coloring.entry(*c).or_insert_with(|| {
+                let c = next_color;
+                next_color.increment();
+                c
+            });
         }
 
         // todo: sanity check for colorings?
@@ -426,8 +422,8 @@ impl<'g> Tiling<'g> {
         for (x, y) in r {
             let node = (x0 + *x, y0 + *y);
 
-	    // Check that this node is in-bounds and uncolored.
-	    // TODO(maemre): validate this reasoning for bounds checking, extend to the "soft region"
+            // Check that this node is in-bounds and uncolored.
+            // TODO(maemre): validate this reasoning for bounds checking, extend to the "soft region"
             if (!self.graph.contains(&node)) || self.color(&node).is_some() {
                 return None;
             }
@@ -446,8 +442,8 @@ impl<'g> Tiling<'g> {
 
     // Enumerate all partial colorings of the given graph with given tile size
     pub fn enumerate(g: &'g Graph, r: usize) -> HashSet<Tiling<'g>> {
-        assert!(! g.nodes.is_empty());
-	assert!(r > 0);
+        assert!(!g.nodes.is_empty());
+        assert!(r > 0);
 
         let mut visited = HashSet::new();
         let mut worklist = vec![Tiling::of_graph(g)];
@@ -490,10 +486,13 @@ impl<'g> Tiling<'g> {
     /// This method returns a set of regions because we deliberately forget
     /// different tilings for the same region.
     pub fn min_covers(g: &'g Graph, extension: &'g Graph, tile_size: usize) -> HashSet<Region> {
-        assert!(! g.nodes.is_empty());
-	assert!(tile_size > 0);
+        assert!(!g.nodes.is_empty());
+        assert!(tile_size > 0);
 
-        assert!(g.nodes.iter().all(|n| extension.contains(n)), "the extension must be a superset of the graph");
+        assert!(
+            g.nodes.iter().all(|n| extension.contains(n)),
+            "the extension must be a superset of the graph"
+        );
 
         debug!("{:?}", g);
         debug!("{:?}", extension);
@@ -522,16 +521,18 @@ impl<'g> Tiling<'g> {
                     // add only valid tiles that:
                     // - do not intersect with the region, and
                     // - are contained in the extension
-                    if shifted.iter().all(|n| (! region.contains(n)) && extension.contains(n)) {
+                    if shifted
+                        .iter()
+                        .all(|n| (!region.contains(n)) && extension.contains(n))
+                    {
                         let combined = &region | &shifted;
                         debug!("new region: {combined:?}");
-                        if ! visited.contains(&combined) {
+                        if !visited.contains(&combined) {
                             worklist.push(combined);
                         }
                     }
                 }
             }
-
         }
 
         visited.retain(|cover| g.nodes.iter().all(|n| cover.contains(n)));
@@ -554,13 +555,13 @@ impl<'g> Tiling<'g> {
         let mut combined = shift(flip(origin), r1);
         combined.append(&mut shift(flip(origin), r2));
 
-	debug_only! {
-            eprintln!("r1: {r1:?}");
-            eprintln!("r2: {r2:?}");
-            eprintln!("combined: {combined:?}");
-            eprintln!("self:\n{self}");
-            eprintln!("c1: {c1}, c2: {c2}");
-	}
+        debug_only! {
+                eprintln!("r1: {r1:?}");
+                eprintln!("r2: {r2:?}");
+                eprintln!("combined: {combined:?}");
+                eprintln!("self:\n{self}");
+                eprintln!("c1: {c1}, c2: {c2}");
+        }
 
         if let Some(new_splits) = recomb.get(&combined) {
             debug!("generated:");
@@ -594,11 +595,11 @@ impl<'g> Tiling<'g> {
         let mut visited = HashSet::new();
         let mut worklist = vec![self.clone()];
         let recomb = recomb(k);
-	debug_only! {
-            for (r1, rs) in &recomb {
-		eprintln!("{r1:?}: {rs:?}");
-            }
-	}
+        debug_only! {
+                for (r1, rs) in &recomb {
+            eprintln!("{r1:?}: {rs:?}");
+                }
+        }
 
         while let Some(g) = worklist.pop() {
             if !visited.insert(g.clone()) {
@@ -609,7 +610,7 @@ impl<'g> Tiling<'g> {
             let mut regions: Vec<Region> = vec![Region::new(); n_colors];
 
             for (j, c) in g.color.iter().enumerate() {
-                    regions[c.unwrap().0.get() as usize - 1].insert(g.graph.node_at(j));
+                regions[c.unwrap().0.get() as usize - 1].insert(g.graph.node_at(j));
             }
 
             // Select a pair of regions up to ordering
@@ -628,7 +629,7 @@ impl<'g> Tiling<'g> {
     }
 
     pub fn is_complete(&self) -> bool {
-	self.next_uncolored_cell.is_none()
+        self.next_uncolored_cell.is_none()
     }
 }
 
@@ -640,10 +641,10 @@ fn flip(node: Node) -> Node {
 impl<'g> Index<Node> for Tiling<'g> {
     type Output = Option<Color>;
     fn index(&self, n: Node) -> &Self::Output {
-	// eprintln!("node: {n:?}");
-	// eprintln!("graph: {:?}", self.graph);
-	// eprintln!("{}", self.graph.indices[&n]);
-	// eprintln!("{}", self.color.len());
+        // eprintln!("node: {n:?}");
+        // eprintln!("graph: {:?}", self.graph);
+        // eprintln!("{}", self.graph.indices[&n]);
+        // eprintln!("{}", self.color.len());
         &self.color[self.graph.indices[&n]]
     }
 }

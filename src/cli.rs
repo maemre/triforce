@@ -48,7 +48,6 @@ pub fn read_graph(g: GraphSource) -> Graph {
             Graph::from(region)
         }
         GraphSource::Triangle(n) => Graph::triangle(n),
-        _ => unreachable!(),
     }
 }
 

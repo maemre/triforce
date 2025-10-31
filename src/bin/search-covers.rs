@@ -70,6 +70,10 @@ fn search_happy_cover(
             println!("Explored {i} alternatives");
         }
 
+        if !regions_tried.insert(graph.clone()) {
+            continue;
+        }
+
         // check if this region is already refuted
         if counterexamples
             .iter()
@@ -78,13 +82,13 @@ fn search_happy_cover(
             continue;
         }
 
-        if !regions_tried.insert(graph.clone()) {
-            continue;
-        }
-
         println!("graph: {:?}", graph.nodes());
 
-        let covers = Tiling::min_covers(&graph, &extensions, tile_size);
+        let covers = Tiling::min_covers(&graph, &allowed_in_covers, tile_size);
+
+        // for cover in &covers {
+        //     println!("{}", serde_json::to_string(&MaybeRegion::from_region(cover.clone())).unwrap());
+        // }
 
         println!("#covers: {}", covers.len());
 
@@ -115,6 +119,7 @@ fn search_happy_cover(
                 let reachable = first.reachable(tile_size);
 
                 if complete_len != reachable.len() {
+                    println!("failing cover: {:?}", cover);
                     counterexamples.insert(cover);
                 }
 

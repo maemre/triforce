@@ -226,6 +226,11 @@ fn shift(n: Node, r: &Region) -> Region {
     r.iter().map(|(x, y)| (n.0 + *x, n.1 + *y)).collect()
 }
 
+// Calculate the vector n1 - n2 as a node
+fn sub(n1: Node, n2: Node) -> Node {
+    (n1.0 - n2.0, n1.1 - n2.1)
+}
+
 // Calculate recombinations of all pairs of regions of size `n`
 //
 // The return value is a map where:
@@ -362,7 +367,7 @@ pub struct Tiling<'graph> {
 }
 
 impl<'g> Tiling<'g> {
-    fn of_graph(graph: &Graph) -> Tiling {
+    fn of_graph(graph: &'g Graph) -> Tiling<'g> {
         Tiling {
             graph,
             color: vec![None; graph.nodes.len()],
@@ -515,20 +520,23 @@ impl<'g> Tiling<'g> {
             for n in region.neighbors().into_iter().filter(|n| g.contains(n)) {
                 debug!("considering neighbor {n:?}");
                 for t in &tiles {
-                    let shifted = shift(n, t);
-                    debug!("got tile {t:?} -> {shifted:?}");
+                    // should identify each point in the tile with the neighbor
+                    for n_t in &t.inner {
+                        let shifted = shift(sub(n, *n_t), t);
+                        debug!("got tile {t:?} -> {shifted:?}");
 
-                    // add only valid tiles that:
-                    // - do not intersect with the region, and
-                    // - are contained in the extension
-                    if shifted
-                        .iter()
-                        .all(|n| (!region.contains(n)) && extension.contains(n))
-                    {
-                        let combined = &region | &shifted;
-                        debug!("new region: {combined:?}");
-                        if !visited.contains(&combined) {
-                            worklist.push(combined);
+                        // add only valid tiles that:
+                        // - do not intersect with the region, and
+                        // - are contained in the extension
+                        if shifted
+                            .iter()
+                            .all(|n| (!region.contains(n)) && extension.contains(n))
+                        {
+                            let combined = &region | &shifted;
+                            debug!("new region: {combined:?}");
+                            if !visited.contains(&combined) {
+                                worklist.push(combined);
+                            }
                         }
                     }
                 }
@@ -584,7 +592,6 @@ impl<'g> Tiling<'g> {
     // Find the graphs with region size `k` reachable from this graph by recombining graphs
     pub fn reachable(&self, k: usize) -> HashSet<Tiling<'g>> {
         let n_colors = self.next_color.0.get() as usize - 1;
-        let n = self.len();
 
         assert_eq!(
             n_colors * k,

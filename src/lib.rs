@@ -23,8 +23,9 @@
 //! Coordinates are ordered in lexicographic order, and we normalize regions to
 //! start at the origin in many data structures below.
 
+use ahash::{HashMap, HashMapExt, HashSet, HashSetExt};
 use std::{
-    collections::{BTreeSet as Set, *},
+    collections::{BTreeMap, BTreeSet as Set},
     num::NonZeroU8,
     ops::{BitOr, Index},
 };
@@ -514,9 +515,9 @@ impl<'g> Tiling<'g> {
                 continue;
             }
 
-            let neighbors = region.neighbors().unwrap_or_else(|| 
-                Set::from([g.indices.first_key_value().unwrap().0.clone()])
-            );
+            let neighbors = region
+                .neighbors()
+                .unwrap_or_else(|| Set::from([g.indices.first_key_value().unwrap().0.clone()]));
 
             debug!("{:#?}", neighbors);
 

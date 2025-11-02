@@ -1,9 +1,12 @@
+use ahash::{HashMap, HashMapExt, HashSet, HashSetExt};
+use lru::LruCache;
 use rayon::prelude::*;
 use scc::HashSet as ConcurrentHashSet;
-use std::collections::{BTreeMap, BinaryHeap, HashMap, HashSet};
+use std::collections::{BTreeMap, BinaryHeap};
+use std::num::NonZero;
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Mutex;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 use clap::Parser;
 use triforce::cli::*;
@@ -48,7 +51,7 @@ struct WithCost<T>(T, isize);
 impl<T: Eq + Ord> PartialOrd for WithCost<T> {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
         use std::cmp::Ordering::*;
-        match (- self.1).cmp(& (- other.1)) {
+        match (-self.1).cmp(&(-other.1)) {
             Equal => Some(self.0.cmp(&other.0)),
             o => Some(o),
         }
@@ -90,6 +93,9 @@ fn search_happy_cover<F: Fn(Node) -> isize + Sync + Send>(
 
     let worklist = Mutex::new(BinaryHeap::from([WithCost(base, 0)]));
     let regions_tried = ConcurrentHashSet::new();
+
+    // The cache of good covers, to skip re-tiling the same cover
+    let good_cover_cache = Mutex::new(LruCache::<Region, ()>::new(NonZero::new(1 << 20).unwrap()));
 
     let mut i = 0;
 
@@ -159,6 +165,15 @@ fn search_happy_cover<F: Fn(Node) -> isize + Sync + Send>(
                 // TODO: cache positive results too (can we use suffix trees?)
                 let tilings_tried = AtomicUsize::new(0);
                 let first_cex = covers.into_par_iter().find_map_any(|cover| {
+                    // skip the cover if it is already checked and in cache
+                    // this is an expensive operation w.r.t. multithreading
+                    {
+                        // cannot use `contains` because it does not update the LRU cache.
+                        if good_cover_cache.lock().unwrap().get(&cover).is_some() {
+                            return None;
+                        }
+                    }
+
                     let g = Graph::from(cover.clone());
                     let tilings = Tiling::enumerate(&g, tile_size);
                     let complete = tilings
@@ -184,6 +199,9 @@ fn search_happy_cover<F: Fn(Node) -> isize + Sync + Send>(
                             println!("failing cover: {:?}", cover);
                             Some(cover)
                         } else {
+                            // this is a good cover, add it to the cache
+                            good_cover_cache.lock().unwrap().put(cover.clone(), ());
+
                             None
                         }
                     } else {
@@ -252,14 +270,25 @@ fn main() {
     let k = cli.tile_size;
 
     let cost = |n: Node| {
-        partial_tiling.keys().map(|s| {
-            let dx = (n.0 - s.0).abs();
-            let dy = (n.1 - s.1).abs();
-            dx + 0.max(dy - dx)
-        }).max().unwrap()
+        partial_tiling
+            .keys()
+            .map(|s| {
+                let dx = (n.0 - s.0).abs();
+                let dy = (n.1 - s.1).abs();
+                dx + 0.max(dy - dx)
+            })
+            .max()
+            .unwrap()
     };
 
-    match search_happy_cover(base, &extensions, &allowed_in_covers, &partial_tiling, k, cost) {
+    match search_happy_cover(
+        base,
+        &extensions,
+        &allowed_in_covers,
+        &partial_tiling,
+        k,
+        cost,
+    ) {
         None => {
             println!("No suitable region is found");
         }

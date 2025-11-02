@@ -95,7 +95,7 @@ fn search_happy_cover<F: Fn(Node) -> isize + Sync + Send>(
     let regions_tried = ConcurrentHashSet::new();
 
     // The cache of good covers, to skip re-tiling the same cover
-    let good_cover_cache = Mutex::new(LruCache::<Region, ()>::new(NonZero::new(1 << 20).unwrap()));
+    let good_cover_cache = Mutex::new(LruCache::<Region, ()>::new(NonZero::new(10_000_000).unwrap()));
 
     let mut i = 0;
 
@@ -103,7 +103,7 @@ fn search_happy_cover<F: Fn(Node) -> isize + Sync + Send>(
         let graphs = {
             let mut worklist = worklist.lock().unwrap();
             let mut graphs = vec![];
-            while graphs.len() < 4 {
+            while graphs.len() < 2 {
                 if let Some(graph_and_cost) = worklist.pop() {
                     if regions_tried.contains_sync(&graph_and_cost.0) {
                         continue;

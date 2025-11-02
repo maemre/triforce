@@ -35,6 +35,6 @@ fn main() {
     println!("# covers: {:>8}", covers.len());
 
     for c in covers.iter().take(10) {
-        println!("{c:?}");
+        println!("{:?}", c.to_region(&extensions));
     }
 }

@@ -95,7 +95,7 @@ fn search_happy_cover<F: Fn(Node) -> isize + Sync + Send>(
     let regions_tried = ConcurrentHashSet::new();
 
     // The cache of good covers, to skip re-tiling the same cover
-    let good_cover_cache = Mutex::new(LruCache::<Region, ()>::new(NonZero::new(10_000_000).unwrap()));
+    let good_cover_cache = Mutex::new(LruCache::<CompactRegion, ()>::new(NonZero::new(10_000_000).unwrap()));
 
     let mut i = 0;
 
@@ -103,7 +103,7 @@ fn search_happy_cover<F: Fn(Node) -> isize + Sync + Send>(
         let graphs = {
             let mut worklist = worklist.lock().unwrap();
             let mut graphs = vec![];
-            while graphs.len() < 2 {
+            while graphs.len() < 3 {
                 if let Some(graph_and_cost) = worklist.pop() {
                     if regions_tried.contains_sync(&graph_and_cost.0) {
                         continue;
@@ -174,7 +174,7 @@ fn search_happy_cover<F: Fn(Node) -> isize + Sync + Send>(
                         }
                     }
 
-                    let g = Graph::from(cover.clone());
+                    let g = Graph::from(cover.to_region(extensions));
                     let tilings = Tiling::enumerate(&g, tile_size);
                     let complete = tilings
                         .iter()
@@ -196,7 +196,7 @@ fn search_happy_cover<F: Fn(Node) -> isize + Sync + Send>(
                         let reachable = first.reachable(tile_size);
 
                         if complete_len != reachable.len() {
-                            println!("failing cover: {:?}", cover);
+                            println!("failing cover: {:?}", cover.to_region(extensions));
                             Some(cover)
                         } else {
                             // this is a good cover, add it to the cache
@@ -205,7 +205,7 @@ fn search_happy_cover<F: Fn(Node) -> isize + Sync + Send>(
                             None
                         }
                     } else {
-                        println!("failing cover: {:?}", cover);
+                        println!("failing cover: {:?}", cover.to_region(extensions));
                         // this cover can't be tiled by extending the partial tiling.
                         Some(cover)
                     }
@@ -245,7 +245,7 @@ fn search_happy_cover<F: Fn(Node) -> isize + Sync + Send>(
             match result {
                 Ok(graph) => return Some(graph),
                 Err(Some(cex)) => {
-                    counterexamples.insert(cex);
+                    counterexamples.insert(cex.to_region(&extensions));
                 }
                 Err(None) => {}
             }
@@ -280,6 +280,8 @@ fn main() {
             .max()
             .unwrap()
     };
+
+    assert!(extensions.len() <= BYTES_IN_COMPACT_REGION * 8, "{} > {}", extensions.len(), BYTES_IN_COMPACT_REGION * 8);
 
     match search_happy_cover(
         base,

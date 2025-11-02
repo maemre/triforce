@@ -152,6 +152,50 @@ impl BitOr for &Region {
     }
 }
 
+pub const BYTES_IN_COMPACT_REGION: usize = size_of::<u128>();
+
+/// Compact representation of a region as a bitset.
+/// Needs the allowed nodes to be converted into a region.
+#[derive(Copy, Clone, PartialEq, Eq, Hash)]
+pub struct CompactRegion(u128);
+
+impl CompactRegion {
+    pub fn empty() -> CompactRegion {
+        CompactRegion(0)
+    }
+    
+    pub fn from(r: &Region, universe: &Graph) -> CompactRegion {
+        debug_assert!(universe.len() < BYTES_IN_COMPACT_REGION);
+        let mut bitset = 0;
+        for (i, n) in universe.nodes.iter().enumerate() {
+            bitset |= (r.contains(n) as u128) << i;
+        }
+        CompactRegion(bitset)
+    }
+
+    pub fn to_region(&self, universe: &Graph) -> Region {
+        debug_assert!(universe.len() < BYTES_IN_COMPACT_REGION);
+        Region::from(universe.nodes.iter().enumerate().filter_map(|(i, n)| if self.0 & (1 << i) != 0 { Some(n.clone()) } else { None }).collect())
+    }
+
+    #[inline(always)]
+    pub fn contains(&self, n: &Node, extension: &Graph) -> bool {
+        self.0 & (1 << extension.indices[&n]) != 0
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[test]
+    fn compact_region_from_to_region() {
+        let universe = Graph::triangle(5);
+        let r = Region::from(vec![(0,0),(0,2),(1,1),(2,2),(3,5),(4,4)]);
+        assert_eq!(r, CompactRegion::from(&r, &universe).to_region(&universe));
+    }
+}
+
 /// Representation of a region for serialization/deserialization.
 #[derive(Serialize, Deserialize)]
 pub struct MaybeRegion(pub Vec<Node>);
@@ -490,7 +534,7 @@ impl<'g> Tiling<'g> {
     ///
     /// This method returns a set of regions because we deliberately forget
     /// different tilings for the same region.
-    pub fn min_covers(g: &'g Graph, extension: &'g Graph, tile_size: usize) -> HashSet<Region> {
+    pub fn min_covers(g: &'g Graph, extension: &'g Graph, tile_size: usize) -> HashSet<CompactRegion> {
         assert!(!g.nodes.is_empty());
         assert!(tile_size > 0);
 
@@ -504,16 +548,16 @@ impl<'g> Tiling<'g> {
 
         // we don't care about the actual tilings so we can work on regions
         let mut visited = HashSet::new();
-        let mut worklist = vec![Region::new()];
+        let mut worklist = vec![CompactRegion::empty()];
 
         let tiles = regions(tile_size);
 
-        while let Some(region) = worklist.pop() {
-            debug!("popped {region:?}");
-            debug!("visited {visited:?}");
-            if !visited.insert(region.clone()) {
+        while let Some(compact_region) = worklist.pop() {
+            if !visited.insert(compact_region) {
                 continue;
             }
+            let region = compact_region.to_region(extension);
+            debug!("popped {region:?}");
 
             let neighbors = region
                 .neighbors()
@@ -540,8 +584,9 @@ impl<'g> Tiling<'g> {
                         {
                             let combined = &region | &shifted;
                             debug!("new region: {combined:?}");
-                            if !visited.contains(&combined) {
-                                worklist.push(combined);
+                            let compact = CompactRegion::from(&combined, extension);
+                            if !visited.contains(&compact) {
+                                worklist.push(compact);
                             }
                         }
                     }
@@ -549,7 +594,7 @@ impl<'g> Tiling<'g> {
             }
         }
 
-        visited.retain(|cover| g.nodes.iter().all(|n| cover.contains(n)));
+        visited.retain(|cover| g.nodes.iter().all(|n| cover.contains(n, extension)));
         visited
     }
 

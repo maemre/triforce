@@ -192,7 +192,7 @@ fn search_happy_cover<F: Fn(Node) -> isize + Sync + Send>(
                         }
                     }
 
-                    let g = Graph::from(cover.to_region(extensions));
+                    let g = Graph::from(cover.to_region(allowed_in_covers));
                     let tilings = Tiling::enumerate(&g, tile_size);
                     let complete = tilings
                         .iter()
@@ -214,7 +214,7 @@ fn search_happy_cover<F: Fn(Node) -> isize + Sync + Send>(
                         let reachable = first.reachable(tile_size);
 
                         if complete_len != reachable.len() {
-                            println!("failing cover: {:?}", cover.to_region(extensions));
+                            println!("failing cover: {:?}", cover.to_region(allowed_in_covers));
                             Some(cover)
                         } else {
                             // this is a good cover, add it to the cache
@@ -223,7 +223,7 @@ fn search_happy_cover<F: Fn(Node) -> isize + Sync + Send>(
                             None
                         }
                     } else {
-                        println!("failing cover: {:?}", cover.to_region(extensions));
+                        println!("failing cover: {:?}", cover.to_region(allowed_in_covers));
                         // this cover can't be tiled by extending the partial tiling.
                         Some(cover)
                     }
@@ -263,7 +263,7 @@ fn search_happy_cover<F: Fn(Node) -> isize + Sync + Send>(
             match result {
                 Ok(graph) => return Some(graph),
                 Err(Some(cex)) => {
-                    counterexamples.insert(cex.to_region(&extensions));
+                    counterexamples.insert(cex.to_region(&allowed_in_covers));
                 }
                 Err(None) => {}
             }

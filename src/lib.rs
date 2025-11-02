@@ -163,24 +163,41 @@ impl CompactRegion {
     pub fn empty() -> CompactRegion {
         CompactRegion(0)
     }
-    
+
     pub fn from(r: &Region, universe: &Graph) -> CompactRegion {
-        debug_assert!(universe.len() < BYTES_IN_COMPACT_REGION);
+        debug_assert!(universe.len() < BYTES_IN_COMPACT_REGION * 8);
         let mut bitset = 0;
         for (i, n) in universe.nodes.iter().enumerate() {
             bitset |= (r.contains(n) as u128) << i;
         }
+        debug_assert_eq!(&CompactRegion(bitset).to_region(universe), r);
         CompactRegion(bitset)
     }
 
     pub fn to_region(&self, universe: &Graph) -> Region {
-        debug_assert!(universe.len() < BYTES_IN_COMPACT_REGION);
-        Region::from(universe.nodes.iter().enumerate().filter_map(|(i, n)| if self.0 & (1 << i) != 0 { Some(n.clone()) } else { None }).collect())
+        debug_assert!(universe.len() < BYTES_IN_COMPACT_REGION * 8);
+        Region::from(
+            universe
+                .nodes
+                .iter()
+                .enumerate()
+                .filter_map(|(i, n)| {
+                    if self.0 & (1 << i) != 0 {
+                        Some(n.clone())
+                    } else {
+                        None
+                    }
+                })
+                .collect(),
+        )
     }
 
     #[inline(always)]
-    pub fn contains(&self, n: &Node, extension: &Graph) -> bool {
-        self.0 & (1 << extension.indices[&n]) != 0
+    pub fn contains(&self, n: &Node, universe: &Graph) -> bool {
+        debug_assert!(universe.len() < BYTES_IN_COMPACT_REGION * 8);
+        let result = self.0 & (1 << universe.indices[&n]) != 0;
+        assert_eq!(self.to_region(universe).contains(n), result);
+        result
     }
 }
 
@@ -191,7 +208,7 @@ mod test {
     #[test]
     fn compact_region_from_to_region() {
         let universe = Graph::triangle(5);
-        let r = Region::from(vec![(0,0),(0,2),(1,1),(2,2),(3,5),(4,4)]);
+        let r = Region::from(vec![(0, 0), (0, 2), (1, 1), (2, 2), (3, 5), (4, 4)]);
         assert_eq!(r, CompactRegion::from(&r, &universe).to_region(&universe));
     }
 }
@@ -534,17 +551,21 @@ impl<'g> Tiling<'g> {
     ///
     /// This method returns a set of regions because we deliberately forget
     /// different tilings for the same region.
-    pub fn min_covers(g: &'g Graph, extension: &'g Graph, tile_size: usize) -> HashSet<CompactRegion> {
+    pub fn min_covers(
+        g: &'g Graph,
+        allowed_in_covers: &'g Graph,
+        tile_size: usize,
+    ) -> HashSet<CompactRegion> {
         assert!(!g.nodes.is_empty());
         assert!(tile_size > 0);
 
         assert!(
-            g.nodes.iter().all(|n| extension.contains(n)),
+            g.nodes.iter().all(|n| allowed_in_covers.contains(n)),
             "the extension must be a superset of the graph"
         );
 
         debug!("{:?}", g);
-        debug!("{:?}", extension);
+        debug!("{:?}", allowed_in_covers);
 
         // we don't care about the actual tilings so we can work on regions
         let mut visited = HashSet::new();
@@ -556,7 +577,7 @@ impl<'g> Tiling<'g> {
             if !visited.insert(compact_region) {
                 continue;
             }
-            let region = compact_region.to_region(extension);
+            let region = compact_region.to_region(allowed_in_covers);
             debug!("popped {region:?}");
 
             let neighbors = region
@@ -580,11 +601,11 @@ impl<'g> Tiling<'g> {
                         // - are contained in the extension
                         if shifted
                             .iter()
-                            .all(|n| (!region.contains(n)) && extension.contains(n))
+                            .all(|n| (!region.contains(n)) && allowed_in_covers.contains(n))
                         {
                             let combined = &region | &shifted;
                             debug!("new region: {combined:?}");
-                            let compact = CompactRegion::from(&combined, extension);
+                            let compact = CompactRegion::from(&combined, allowed_in_covers);
                             if !visited.contains(&compact) {
                                 worklist.push(compact);
                             }
@@ -594,7 +615,7 @@ impl<'g> Tiling<'g> {
             }
         }
 
-        visited.retain(|cover| g.nodes.iter().all(|n| cover.contains(n, extension)));
+        visited.retain(|cover| g.nodes.iter().all(|n| cover.contains(n, allowed_in_covers)));
         visited
     }
 

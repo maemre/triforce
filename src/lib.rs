@@ -196,7 +196,7 @@ impl CompactRegion {
     pub fn contains(&self, n: &Node, universe: &Graph) -> bool {
         debug_assert!(universe.len() < BYTES_IN_COMPACT_REGION * 8);
         let result = self.0 & (1 << universe.indices[&n]) != 0;
-        assert_eq!(self.to_region(universe).contains(n), result);
+        debug_assert_eq!(self.to_region(universe).contains(n), result);
         result
     }
 }

@@ -24,8 +24,8 @@ struct Cli {
 
 fn main() {
     let cli = Cli::parse();
-    let graph = read_graph(cli.graph);
-    let mut extensions_r = read_graph(cli.extensions).into_region();
+    let graph = read_graph(cli.graph, false);
+    let mut extensions_r = read_graph(cli.extensions, true).into_region();
     extensions_r.append(&mut graph.clone().into_region());
     let extensions = Graph::from(extensions_r);
 

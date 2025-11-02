@@ -103,13 +103,12 @@ impl Region {
 
     /// Neighbors of this region.
     ///
-    /// For an empty region, this method returns the set that contains the
-    /// origin.
-    pub fn neighbors(&self) -> Set<Node> {
+    /// For an empty region, this method returns None.
+    pub fn neighbors(&self) -> Option<Set<Node>> {
         if self.is_empty() {
-            Set::from([(0, 0)])
+            None
         } else {
-            self.inner.iter().flat_map(neighbors).collect()
+            Some(self.inner.iter().flat_map(neighbors).collect())
         }
     }
 }
@@ -157,7 +156,7 @@ impl BitOr for &Region {
 pub struct MaybeRegion(pub Vec<Node>);
 
 impl MaybeRegion {
-    pub fn to_region(mut self) -> Option<Region> {
+    pub fn to_region(mut self, required_to_start_at_origin: bool) -> Option<Region> {
         self.0.sort();
         let l = self.0.len();
         self.0.dedup();
@@ -167,7 +166,7 @@ impl MaybeRegion {
         }
 
         if let Some(n) = self.0.first() {
-            if *n != (0, 0) {
+            if required_to_start_at_origin && *n != (0, 0) {
                 return None;
             }
         }
@@ -509,15 +508,21 @@ impl<'g> Tiling<'g> {
         let tiles = regions(tile_size);
 
         while let Some(region) = worklist.pop() {
+            debug!("popped {region:?}");
+            debug!("visited {visited:?}");
             if !visited.insert(region.clone()) {
                 continue;
             }
 
-            debug!("{:#?}", region.neighbors());
+            let neighbors = region.neighbors().unwrap_or_else(|| 
+                Set::from([g.indices.first_key_value().unwrap().0.clone()])
+            );
+
+            debug!("{:#?}", neighbors);
 
             // consider only the neighbors in the graph, otherwise the added
             // tile is not guaranteed to be in a minimal cover.
-            for n in region.neighbors().into_iter().filter(|n| g.contains(n)) {
+            for n in neighbors.into_iter().filter(|n| g.contains(n)) {
                 debug!("considering neighbor {n:?}");
                 for t in &tiles {
                     // should identify each point in the tile with the neighbor

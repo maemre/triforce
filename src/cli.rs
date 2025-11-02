@@ -34,7 +34,7 @@ impl FromStr for GraphSource {
     }
 }
 
-pub fn read_graph(g: GraphSource) -> Graph {
+pub fn read_graph(g: GraphSource, required_to_start_at_origin: bool) -> Graph {
     match g {
         GraphSource::FromFile(file) => {
             let region =
@@ -43,7 +43,7 @@ pub fn read_graph(g: GraphSource) -> Graph {
 			.expect("could not read the input file")
 		)
 		.expect("the input file is not a well-formed description of a region")
-		.to_region()
+		.to_region(required_to_start_at_origin)
 		.expect("the input region is not well-structured (does not start at origin or has duplicates)");
             Graph::from(region)
         }

@@ -152,6 +152,7 @@ fn search_happy_cover<F: Fn(Node) -> isize + Sync + Send>(
 
                 println!("graph: {:?}", graph.nodes());
                 println!("#covers: {}", covers.len());
+                assert_ne!(covers.len(), 0);
 
                 // check if all covers have a connected metagraph
 
@@ -203,6 +204,7 @@ fn search_happy_cover<F: Fn(Node) -> isize + Sync + Send>(
 
                 let neighbors = r
                     .neighbors()
+                    .expect("the starting graph cannot be empty")
                     .into_iter()
                     .filter(|n| extensions.contains(n))
                     .collect::<Vec<_>>();
@@ -237,10 +239,10 @@ fn search_happy_cover<F: Fn(Node) -> isize + Sync + Send>(
 
 fn main() {
     let cli = Cli::parse();
-    let base = read_graph(cli.a);
-    let mut extensions_r = read_graph(cli.b).into_region();
+    let base = read_graph(cli.a, false);
+    let mut extensions_r = read_graph(cli.b, false).into_region();
     extensions_r.append(&mut base.clone().into_region());
-    let mut allowed_in_covers_r = read_graph(cli.c).into_region();
+    let mut allowed_in_covers_r = read_graph(cli.c, true).into_region();
     allowed_in_covers_r.append(&mut extensions_r.clone());
     let extensions = Graph::from(extensions_r);
     let allowed_in_covers = Graph::from(allowed_in_covers_r);

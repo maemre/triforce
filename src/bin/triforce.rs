@@ -16,7 +16,7 @@ struct Cli {
 
 fn main() {
     let cli = Cli::parse();
-    let graph = read_graph(cli.graph);
+    let graph = read_graph(cli.graph, true);
 
     let k = cli.tile_size;
 

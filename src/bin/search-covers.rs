@@ -39,6 +39,10 @@ struct Cli {
 
     /// A partial tiling we are required to fill
     partial_tiling: Option<PathBuf>,
+
+    /// Check cover counterexamples exactly
+    #[arg(required = false, long = "exact-cover", default_value_t = false)]
+    exact_cover_check: bool,
 }
 
 /// A piece of data with associated cost.
@@ -96,6 +100,7 @@ fn search_happy_cover<F: Fn(Node) -> isize + Sync + Send>(
     partial_tiling: &BTreeMap<Node, Color>,
     tile_size: usize,
     cost: F,
+    exact_cover_check: bool,
 ) -> Option<Graph> {
     let partial_tile_set = {
         let mut color2tile = HashMap::<Color, Vec<Node>>::new();
@@ -164,9 +169,10 @@ fn search_happy_cover<F: Fn(Node) -> isize + Sync + Send>(
                 // check if this region is already refuted
 
                 // might want to skip this?
-                if counterexamples
-                    .iter()
-                    .any(|cex| graph.nodes().iter().all(|n| cex.contains(n)))
+                if !exact_cover_check
+                    && counterexamples
+                        .iter()
+                        .any(|cex| graph.nodes().iter().all(|n| cex.contains(n)))
                 {
                     return Err(None);
                 }
@@ -195,7 +201,13 @@ fn search_happy_cover<F: Fn(Node) -> isize + Sync + Send>(
                         }
                     }
 
-                    let g = Graph::from(cover.to_region(allowed_in_covers));
+                    let region = cover.to_region(allowed_in_covers);
+
+                    if exact_cover_check && counterexamples.contains(&region) {
+                        return Some(cover);
+                    }
+
+                    let g = Graph::from(region);
                     let tilings = Tiling::enumerate(&g, tile_size);
                     let complete = tilings
                         .iter()
@@ -316,6 +328,7 @@ fn main() {
         &partial_tiling,
         k,
         cost,
+        cli.exact_cover_check,
     ) {
         None => {
             println!("No suitable region is found");

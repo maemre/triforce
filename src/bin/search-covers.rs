@@ -321,6 +321,8 @@ fn main() {
         BYTES_IN_COMPACT_REGION * 8
     );
 
+    println!("exact cover check: {}", cli.exact_cover_check);
+
     match search_happy_cover(
         base,
         &extensions,

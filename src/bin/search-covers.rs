@@ -1,8 +1,8 @@
+use ahash::{HashMap, HashMapExt, HashSet, HashSetExt};
 use lru::LruCache;
 use rayon::prelude::*;
 use scc::HashSet as ConcurrentHashSet;
 use std::collections::{BTreeMap, BinaryHeap};
-use ahash::{HashMap, HashMapExt, HashSet, HashSetExt};
 use std::num::NonZero;
 use std::path::PathBuf;
 use std::sync::Mutex;
@@ -119,7 +119,9 @@ fn search_happy_cover<F: Fn(Node) -> isize + Sync + Send>(
     let regions_tried = ConcurrentHashSet::new();
 
     // The cache of good covers, to skip re-tiling the same cover
-    let good_cover_cache = Mutex::new(LruCache::<CompactRegion, ()>::new(NonZero::new(10_000_000).unwrap()));
+    let good_cover_cache = Mutex::new(LruCache::<CompactRegion, ()>::new(
+        NonZero::new(10_000_000).unwrap(),
+    ));
 
     let mut i = 0;
     let n_threads = rayon::current_num_threads();
@@ -300,7 +302,12 @@ fn main() {
             .unwrap()
     };
 
-    assert!(extensions.len() <= BYTES_IN_COMPACT_REGION * 8, "{} > {}", extensions.len(), BYTES_IN_COMPACT_REGION * 8);
+    assert!(
+        extensions.len() <= BYTES_IN_COMPACT_REGION * 8,
+        "{} > {}",
+        extensions.len(),
+        BYTES_IN_COMPACT_REGION * 8
+    );
 
     match search_happy_cover(
         base,

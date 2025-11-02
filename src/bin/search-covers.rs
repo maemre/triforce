@@ -1,5 +1,9 @@
-use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
+use rayon::prelude::*;
+use scc::HashSet as ConcurrentHashSet;
+use std::collections::{BTreeMap, BinaryHeap, HashMap, HashSet};
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::Mutex;
 
 use clap::Parser;
 use triforce::cli::*;
@@ -34,12 +38,37 @@ struct Cli {
     partial_tiling: Option<PathBuf>,
 }
 
-fn search_happy_cover(
+/// A piece of data with associated cost.
+///
+/// `WithCost` objects are ordered according to their cost, so a <= b iff a.cost
+/// >= b.cost.
+#[derive(PartialEq, Eq, Ord)]
+struct WithCost<T>(T, isize);
+
+impl<T: Eq + Ord> PartialOrd for WithCost<T> {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        use std::cmp::Ordering::*;
+        match (- self.1).cmp(& (- other.1)) {
+            Equal => Some(self.0.cmp(&other.0)),
+            o => Some(o),
+        }
+    }
+}
+
+// Search for a "happy" fixed region using given cost function.
+//
+// The cost function is assumed to be additive, so the cost of a graph is the
+// sum of the cost of its nodes.
+//
+// The search procedure uses a priority queue based on the lowest cost for its
+// worklist.
+fn search_happy_cover<F: Fn(Node) -> isize + Sync + Send>(
     base: Graph,
     extensions: &Graph,
     allowed_in_covers: &Graph,
     partial_tiling: &BTreeMap<Node, Color>,
     tile_size: usize,
+    cost: F,
 ) -> Option<Graph> {
     let partial_tile_set = {
         let mut color2tile = HashMap::<Color, Vec<Node>>::new();
@@ -59,95 +88,146 @@ fn search_happy_cover(
     // We keep failed extensions around to quickly refute a particular region
     let mut counterexamples = HashSet::<Region>::new();
 
-    let mut worklist = VecDeque::from([base]);
-    let mut regions_tried = HashSet::new();
+    let worklist = Mutex::new(BinaryHeap::from([WithCost(base, 0)]));
+    let regions_tried = ConcurrentHashSet::new();
 
     let mut i = 0;
 
-    while let Some(graph) = worklist.pop_front() {
-        i += 1;
-        if i % 1000 == 0 {
-            println!("Explored {i} alternatives");
-        }
-
-        if !regions_tried.insert(graph.clone()) {
-            continue;
-        }
-
-        // check if this region is already refuted
-        if counterexamples
-            .iter()
-            .any(|cex| graph.nodes().iter().all(|n| cex.contains(n)))
-        {
-            continue;
-        }
-
-        println!("graph: {:?}", graph.nodes());
-
-        let covers = Tiling::min_covers(&graph, &allowed_in_covers, tile_size);
-
-        // for cover in &covers {
-        //     println!("{}", serde_json::to_string(&MaybeRegion::from_region(cover.clone())).unwrap());
-        // }
-
-        println!("#covers: {}", covers.len());
-
-        // check if all covers have a connected metagraph
-
-        // TODO: cache positive results too (can we use suffix trees?)
-        let mut tiles = 0;
-        let all_connected = covers.into_iter().all(|cover| {
-            let g = Graph::from(cover.clone());
-            let tilings = Tiling::enumerate(&g, tile_size);
-            let complete = tilings
-                .iter()
-                .filter(|g| g.is_complete())
-                .collect::<Vec<_>>();
-
-            tiles += complete.len();
-
-            // check if there is a completion of the partial tiling
-            if complete.iter().any(|tiling| {
-                partial_tile_set.iter().all(|tile| {
-                    let color = tiling.color(&tile[0]);
-                    tile.iter().all(|n| tiling.color(n) == color)
-                })
-            }) {
-                let first = (*complete.iter().min().unwrap()).clone();
-                let complete_len = complete.len();
-                drop(complete);
-                let reachable = first.reachable(tile_size);
-
-                if complete_len != reachable.len() {
-                    println!("failing cover: {:?}", cover);
-                    counterexamples.insert(cover);
+    loop {
+        let graphs = {
+            let mut worklist = worklist.lock().unwrap();
+            let mut graphs = vec![];
+            while graphs.len() < 4 {
+                if let Some(graph_and_cost) = worklist.pop() {
+                    if regions_tried.contains_sync(&graph_and_cost.0) {
+                        continue;
+                    }
+                    if counterexamples
+                        .iter()
+                        .any(|cex| graph_and_cost.0.nodes().iter().all(|n| cex.contains(n)))
+                    {
+                        i += 1;
+                        continue;
+                    }
+                    graphs.push(graph_and_cost);
+                } else {
+                    break;
                 }
-
-                complete_len == reachable.len()
-            } else {
-                println!("failing cover: {:?}", cover);
-                // this cover can't be tiled by extending the partial tiling.
-                counterexamples.insert(cover);
-                false
             }
-        });
-
-        println!("# tilings: {tiles}");
-
-        if all_connected {
-            return Some(graph);
+            graphs
+        };
+        if graphs.is_empty() {
+            break;
         }
 
-        // extend this by one node
-        let r = graph.into_region();
-        for n in r.neighbors() {
-            if extensions.contains(&n) {
-                let mut new = r.clone();
-                new.insert(n);
-                let new = Graph::from(new);
-                if !regions_tried.contains(&new) {
-                    worklist.push_back(new);
+        println!("tried {i} graphs (including counterexample refutations)");
+        println!("dispatching {} graphs", graphs.len());
+        i += graphs.len();
+
+        // Each result is a Result that is:
+        // - Ok(graph) if the result is fine
+        // - Err(Option(counterexample)) if a new counterexample is discovered
+        let solutions = graphs
+            .into_par_iter()
+            .map(|WithCost(graph, curr_cost)| {
+                if regions_tried.insert_sync(graph.clone()).is_err() {
+                    return Err(None);
                 }
+
+                // check if this region is already refuted
+
+                // might want to skip this?
+                if counterexamples
+                    .iter()
+                    .any(|cex| graph.nodes().iter().all(|n| cex.contains(n)))
+                {
+                    return Err(None);
+                }
+
+                let covers = Tiling::min_covers(&graph, &allowed_in_covers, tile_size);
+
+                // for cover in &covers {
+                //     println!("{}", serde_json::to_string(&MaybeRegion::from_region(cover.clone())).unwrap());
+                // }
+
+                println!("graph: {:?}", graph.nodes());
+                println!("#covers: {}", covers.len());
+
+                // check if all covers have a connected metagraph
+
+                // TODO: cache positive results too (can we use suffix trees?)
+                let tilings_tried = AtomicUsize::new(0);
+                let first_cex = covers.into_par_iter().find_map_any(|cover| {
+                    let g = Graph::from(cover.clone());
+                    let tilings = Tiling::enumerate(&g, tile_size);
+                    let complete = tilings
+                        .iter()
+                        .filter(|g| g.is_complete())
+                        .collect::<Vec<_>>();
+
+                    tilings_tried.fetch_add(complete.len(), Ordering::SeqCst);
+
+                    // check if there is a completion of the partial tiling
+                    if complete.iter().any(|tiling| {
+                        partial_tile_set.iter().all(|tile| {
+                            let color = tiling.color(&tile[0]);
+                            tile.iter().all(|n| tiling.color(n) == color)
+                        })
+                    }) {
+                        let first = (*complete.iter().min().unwrap()).clone();
+                        let complete_len = complete.len();
+                        drop(complete);
+                        let reachable = first.reachable(tile_size);
+
+                        if complete_len != reachable.len() {
+                            println!("failing cover: {:?}", cover);
+                            Some(cover)
+                        } else {
+                            None
+                        }
+                    } else {
+                        println!("failing cover: {:?}", cover);
+                        // this cover can't be tiled by extending the partial tiling.
+                        Some(cover)
+                    }
+                });
+
+                println!("# tilings tried: {}", tilings_tried.load(Ordering::SeqCst));
+
+                if first_cex.is_none() {
+                    return Ok(graph);
+                }
+
+                // extend this by one node
+                let r = graph.into_region();
+
+                let neighbors = r
+                    .neighbors()
+                    .into_iter()
+                    .filter(|n| extensions.contains(n))
+                    .collect::<Vec<_>>();
+                let mut worklist = worklist.lock().unwrap();
+                for n in neighbors {
+                    let mut new = r.clone();
+                    new.insert(n);
+                    let new = Graph::from(new);
+                    let cost = curr_cost + cost(n);
+                    if !regions_tried.contains_sync(&new) {
+                        worklist.push(WithCost(new, cost));
+                    }
+                }
+
+                Err(first_cex)
+            })
+            .collect::<Vec<_>>();
+
+        for result in solutions {
+            match result {
+                Ok(graph) => return Some(graph),
+                Err(Some(cex)) => {
+                    counterexamples.insert(cex);
+                }
+                Err(None) => {}
             }
         }
     }
@@ -169,7 +249,15 @@ fn main() {
 
     let k = cli.tile_size;
 
-    match search_happy_cover(base, &extensions, &allowed_in_covers, &partial_tiling, k) {
+    let cost = |n: Node| {
+        partial_tiling.keys().map(|s| {
+            let dx = (n.0 - s.0).abs();
+            let dy = (n.1 - s.1).abs();
+            dx + 0.max(dy - dx)
+        }).max().unwrap()
+    };
+
+    match search_happy_cover(base, &extensions, &allowed_in_covers, &partial_tiling, k, cost) {
         None => {
             println!("No suitable region is found");
         }

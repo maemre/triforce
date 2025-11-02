@@ -1,8 +1,8 @@
-use ahash::{HashMap, HashMapExt, HashSet, HashSetExt};
 use lru::LruCache;
 use rayon::prelude::*;
 use scc::HashSet as ConcurrentHashSet;
 use std::collections::{BTreeMap, BinaryHeap};
+use ahash::{HashMap, HashMapExt, HashSet, HashSetExt};
 use std::num::NonZero;
 use std::path::PathBuf;
 use std::sync::Mutex;
@@ -58,6 +58,30 @@ impl<T: Eq + Ord> PartialOrd for WithCost<T> {
     }
 }
 
+/// Abstracted worklist to allow different search strategies/worklist structures
+struct Worklist {
+    heap: BinaryHeap<WithCost<Graph>>,
+}
+
+impl Worklist {
+    pub fn from<const N: usize>(xs: [WithCost<Graph>; N]) -> Worklist {
+        let heap = BinaryHeap::from(xs);
+        Worklist { heap }
+    }
+
+    fn push(&mut self, g: WithCost<Graph>) {
+        self.heap.push(g);
+    }
+
+    fn pop(&mut self) -> Option<WithCost<Graph>> {
+        self.heap.pop()
+    }
+
+    fn len(&self) -> usize {
+        self.heap.len()
+    }
+}
+
 // Search for a "happy" fixed region using given cost function.
 //
 // The cost function is assumed to be additive, so the cost of a graph is the
@@ -91,7 +115,7 @@ fn search_happy_cover<F: Fn(Node) -> isize + Sync + Send>(
     // We keep failed extensions around to quickly refute a particular region
     let mut counterexamples = HashSet::<Region>::new();
 
-    let worklist = Mutex::new(BinaryHeap::from([WithCost(base, 0)]));
+    let worklist = Mutex::new(Worklist::from([WithCost(base, 0)]));
     let regions_tried = ConcurrentHashSet::new();
 
     // The cache of good covers, to skip re-tiling the same cover
@@ -103,16 +127,9 @@ fn search_happy_cover<F: Fn(Node) -> isize + Sync + Send>(
         let graphs = {
             let mut worklist = worklist.lock().unwrap();
             let mut graphs = vec![];
-            while graphs.len() < 3 {
+            while graphs.len() < 4 {
                 if let Some(graph_and_cost) = worklist.pop() {
                     if regions_tried.contains_sync(&graph_and_cost.0) {
-                        continue;
-                    }
-                    if counterexamples
-                        .iter()
-                        .any(|cex| graph_and_cost.0.nodes().iter().all(|n| cex.contains(n)))
-                    {
-                        i += 1;
                         continue;
                     }
                     graphs.push(graph_and_cost);
@@ -128,6 +145,7 @@ fn search_happy_cover<F: Fn(Node) -> isize + Sync + Send>(
 
         println!("tried {i} graphs (including counterexample refutations)");
         println!("dispatching {} graphs", graphs.len());
+        println!("graphs in queue: {}", worklist.lock().unwrap().len());
         i += graphs.len();
 
         // Each result is a Result that is:
@@ -217,6 +235,7 @@ fn search_happy_cover<F: Fn(Node) -> isize + Sync + Send>(
                     return Ok(graph);
                 }
 
+                let mut worklist = worklist.lock().unwrap();
                 // extend this by one node
                 let r = graph.into_region();
 
@@ -226,7 +245,6 @@ fn search_happy_cover<F: Fn(Node) -> isize + Sync + Send>(
                     .into_iter()
                     .filter(|n| extensions.contains(n))
                     .collect::<Vec<_>>();
-                let mut worklist = worklist.lock().unwrap();
                 for n in neighbors {
                     let mut new = r.clone();
                     new.insert(n);

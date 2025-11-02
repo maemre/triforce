@@ -122,12 +122,13 @@ fn search_happy_cover<F: Fn(Node) -> isize + Sync + Send>(
     let good_cover_cache = Mutex::new(LruCache::<CompactRegion, ()>::new(NonZero::new(10_000_000).unwrap()));
 
     let mut i = 0;
+    let n_threads = rayon::current_num_threads();
 
     loop {
         let graphs = {
             let mut worklist = worklist.lock().unwrap();
             let mut graphs = vec![];
-            while graphs.len() < 4 {
+            while graphs.len() < n_threads.max(4) {
                 if let Some(graph_and_cost) = worklist.pop() {
                     if regions_tried.contains_sync(&graph_and_cost.0) {
                         continue;

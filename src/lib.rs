@@ -432,7 +432,7 @@ impl<'g> Tiling<'g> {
         Tiling {
             graph,
             color: vec![None; graph.nodes.len()],
-            next_uncolored_cell: Some((0, 0)),
+            next_uncolored_cell: Some(graph.nodes[0]),
             next_color: Color(NonZeroU8::new(1).unwrap()),
         }
     }

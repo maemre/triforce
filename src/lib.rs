@@ -549,13 +549,17 @@ impl<'g> Tiling<'g> {
     /// - extension must contain g.
     /// - tile_size must be positive.
     ///
-    /// This method returns a set of regions because we deliberately forget
+    /// This function returns a set of regions because we deliberately forget
     /// different tilings for the same region.
+    ///
+    /// This function returns None if one of the covers matches a known
+    /// counterexample.
     pub fn min_covers(
         g: &'g Graph,
         allowed_in_covers: &'g Graph,
         tile_size: usize,
-    ) -> HashSet<CompactRegion> {
+        counterexamples: &HashSet<Region>,
+    ) -> Option<HashSet<CompactRegion>> {
         assert!(!g.nodes.is_empty());
         assert!(tile_size > 0);
 
@@ -579,6 +583,12 @@ impl<'g> Tiling<'g> {
             }
             let region = compact_region.to_region(allowed_in_covers);
             debug!("popped {region:?}");
+
+            // the first check is for performance
+            let fully_covered = || g.nodes.iter().all(|n| region.contains(n));
+            if region.len() >= g.len() && counterexamples.contains(&region) && fully_covered() {
+                return None;
+            }
 
             let neighbors = region
                 .neighbors()
@@ -616,7 +626,7 @@ impl<'g> Tiling<'g> {
         }
 
         visited.retain(|cover| g.nodes.iter().all(|n| cover.contains(n, allowed_in_covers)));
-        visited
+        Some(visited)
     }
 
     // Recombine given two colors (the corresponding regions must be adjacent)

@@ -5,8 +5,8 @@ use scc::HashSet as ConcurrentHashSet;
 use std::collections::{BTreeMap, BinaryHeap};
 use std::num::NonZero;
 use std::path::PathBuf;
-use std::sync::Mutex;
 use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::Mutex;
 
 use clap::Parser;
 use triforce::cli::*;
@@ -177,7 +177,19 @@ fn search_happy_cover<F: Fn(Node) -> isize + Sync + Send>(
                     return Err(None);
                 }
 
-                let covers = Tiling::min_covers(&graph, &allowed_in_covers, tile_size);
+                let empty_set = HashSet::default();
+                let Some(covers) = Tiling::min_covers(
+                    &graph,
+                    &allowed_in_covers,
+                    tile_size,
+                    if exact_cover_check {
+                        &counterexamples
+                    } else {
+                        &empty_set
+                    },
+                ) else {
+                    return Err(None);
+                };
 
                 // for cover in &covers {
                 //     println!("{}", serde_json::to_string(&MaybeRegion::from_region(cover.clone())).unwrap());
@@ -203,9 +215,9 @@ fn search_happy_cover<F: Fn(Node) -> isize + Sync + Send>(
 
                     let region = cover.to_region(allowed_in_covers);
 
-                    if exact_cover_check && counterexamples.contains(&region) {
-                        return Some(cover);
-                    }
+                    // if exact_cover_check && counterexamples.contains(&region) {
+                    //     return Some(cover);
+                    // }
 
                     let g = Graph::from(region);
                     let tilings = Tiling::enumerate(&g, tile_size);

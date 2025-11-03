@@ -1,3 +1,4 @@
+use ahash::HashSet;
 use clap::Parser;
 use triforce::cli::*;
 use triforce::*;
@@ -31,7 +32,7 @@ fn main() {
 
     let k = cli.tile_size;
 
-    let covers = Tiling::min_covers(&graph, &extensions, k);
+    let covers = Tiling::min_covers(&graph, &extensions, k, &HashSet::default());
     println!("# covers: {:>8}", covers.len());
 
     for c in covers.iter().take(10) {

@@ -32,7 +32,7 @@ fn main() {
 
     let k = cli.tile_size;
 
-    let covers = Tiling::min_covers(&graph, &extensions, k, &HashSet::default());
+    let covers = Tiling::min_covers(&graph, &extensions, k, &HashSet::default()).unwrap();
     println!("# covers: {:>8}", covers.len());
 
     for c in covers.iter().take(10) {

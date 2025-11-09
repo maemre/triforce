@@ -33,6 +33,7 @@ use std::{
 use serde::{Deserialize, Serialize};
 
 pub mod cli;
+pub mod concurrency;
 mod fmt;
 mod macros;
 

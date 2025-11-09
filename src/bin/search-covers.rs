@@ -1,12 +1,13 @@
 use ahash::{HashMap, HashMapExt, HashSet, HashSetExt};
 use lru::LruCache;
-use rayon::prelude::*;
 use scc::HashSet as ConcurrentHashSet;
-use std::collections::{BTreeMap, BinaryHeap};
+use std::collections::BTreeMap;
 use std::num::NonZero;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::Mutex;
+use std::sync::{Mutex, RwLock};
+use std::thread;
+use triforce::concurrency::*;
 
 use clap::Parser;
 use triforce::cli::*;
@@ -41,49 +42,8 @@ struct Cli {
     partial_tiling: Option<PathBuf>,
 
     /// Check cover counterexamples exactly
-    #[arg(required = false, long = "exact-cover", default_value_t = false)]
+    #[arg(required = false, long = "exact-cover", default_value_t = true)]
     exact_cover_check: bool,
-}
-
-/// A piece of data with associated cost.
-///
-/// `WithCost` objects are ordered according to their cost, so a <= b iff a.cost
-/// >= b.cost.
-#[derive(PartialEq, Eq, Ord)]
-struct WithCost<T>(T, isize);
-
-impl<T: Eq + Ord> PartialOrd for WithCost<T> {
-    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        use std::cmp::Ordering::*;
-        match (-self.1).cmp(&(-other.1)) {
-            Equal => Some(self.0.cmp(&other.0)),
-            o => Some(o),
-        }
-    }
-}
-
-/// Abstracted worklist to allow different search strategies/worklist structures
-struct Worklist {
-    heap: BinaryHeap<WithCost<Graph>>,
-}
-
-impl Worklist {
-    pub fn from<const N: usize>(xs: [WithCost<Graph>; N]) -> Worklist {
-        let heap = BinaryHeap::from(xs);
-        Worklist { heap }
-    }
-
-    fn push(&mut self, g: WithCost<Graph>) {
-        self.heap.push(g);
-    }
-
-    fn pop(&mut self) -> Option<WithCost<Graph>> {
-        self.heap.pop()
-    }
-
-    fn len(&self) -> usize {
-        self.heap.len()
-    }
 }
 
 // Search for a "happy" fixed region using given cost function.
@@ -118,59 +78,39 @@ fn search_happy_cover<F: Fn(Node) -> isize + Sync + Send>(
     };
 
     // We keep failed extensions around to quickly refute a particular region
-    let mut counterexamples = HashSet::<Region>::new();
+    let counterexamples = RwLock::new(HashSet::<Region>::new());
 
-    let worklist = Mutex::new(Worklist::from([WithCost(base, 0)]));
+    let n_threads = rayon::current_num_threads();
     let regions_tried = ConcurrentHashSet::new();
+    let worklist = Worklist::new([WithCost(base, 0)], n_threads, &regions_tried);
 
     // The cache of good covers, to skip re-tiling the same cover
     let good_cover_cache = Mutex::new(LruCache::<CompactRegion, ()>::new(
         NonZero::new(100_000_000).unwrap(),
     ));
 
-    let mut i = 0;
-    let n_threads = rayon::current_num_threads();
+    let i = AtomicUsize::new(0);
+    let solution = Mutex::new(None);
 
-    loop {
-        let graphs = {
-            let mut worklist = worklist.lock().unwrap();
-            let mut graphs = vec![];
-            while graphs.len() < (2 * n_threads).max(4) {
-                if let Some(graph_and_cost) = worklist.pop() {
-                    if regions_tried.contains_sync(&graph_and_cost.0) {
-                        continue;
-                    }
-                    graphs.push(graph_and_cost);
-                } else {
-                    break;
-                }
-            }
-            graphs
-        };
-        if graphs.is_empty() {
-            break;
-        }
+    let worker = || {
+        loop {
+            let WithCost(graph, curr_cost) = match worklist.pop() {
+                Task::Done => return,
+                Task::Todo(g) => g,
+            };
 
-        println!("tried {i} graphs (including counterexample refutations)");
-        println!("dispatching {} graphs", graphs.len());
-        println!("graphs in queue: {}", worklist.lock().unwrap().len());
-        i += graphs.len();
-
-        // Each result is a Result that is:
-        // - Ok(graph) if the result is fine
-        // - Err(Option(counterexample)) if a new counterexample is discovered
-        let solutions = graphs
-            .into_par_iter()
-            .map(|WithCost(graph, curr_cost)| {
-                if regions_tried.insert_sync(graph.clone()).is_err() {
-                    return Err(None);
-                }
-
+            // Each result is a Result that is:
+            // - Ok(graph) if the result is fine
+            // - Err(Option(counterexample)) if a new counterexample is discovered
+            let check_graph = || -> Result<Graph, Option<CompactRegion>> {
+                i.fetch_add(1, Ordering::SeqCst);
                 // check if this region is already refuted
 
                 // might want to skip this?
                 if !exact_cover_check
                     && counterexamples
+                        .read()
+                        .unwrap()
                         .iter()
                         .any(|cex| graph.nodes().iter().all(|n| cex.contains(n)))
                 {
@@ -178,18 +118,29 @@ fn search_happy_cover<F: Fn(Node) -> isize + Sync + Send>(
                 }
 
                 let empty_set = HashSet::default();
-                let Some(covers) = Tiling::min_covers(
-                    &graph,
-                    &allowed_in_covers,
-                    tile_size,
-                    if exact_cover_check {
-                        &counterexamples
-                    } else {
-                        &empty_set
-                    },
-                ) else {
+                let covers = {
+                    let cexs = counterexamples.read().unwrap();
+                    Tiling::min_covers(
+                        &graph,
+                        &allowed_in_covers,
+                        tile_size,
+                        if exact_cover_check { &cexs } else { &empty_set },
+                    )
+                };
+                let Some(covers) = covers else {
                     return Err(None);
                 };
+
+                let done = worklist.is_done();
+                println!(
+                    "tried {:>5} graphs (including counterexample refutations), graphs in queue: {}, done: {done}",
+                    i.load(Ordering::SeqCst),
+                    worklist.len(),
+                );
+                if done {
+                    // for early exit to skip tiling the last one
+                    return Err(None);
+                }
 
                 // for cover in &covers {
                 //     println!("{}", serde_json::to_string(&MaybeRegion::from_region(cover.clone())).unwrap());
@@ -201,9 +152,8 @@ fn search_happy_cover<F: Fn(Node) -> isize + Sync + Send>(
 
                 // check if all covers have a connected metagraph
 
-                // TODO: cache positive results too (can we use suffix trees?)
                 let tilings_tried = AtomicUsize::new(0);
-                let first_cex = covers.into_par_iter().find_map_any(|cover| {
+                let first_cex = covers.iter().find_map(|cover| {
                     // skip the cover if it is already checked and in cache
                     // this is an expensive operation w.r.t. multithreading
                     {
@@ -259,12 +209,14 @@ fn search_happy_cover<F: Fn(Node) -> isize + Sync + Send>(
                 println!("# tilings tried: {}", tilings_tried.load(Ordering::SeqCst));
 
                 if first_cex.is_none() {
-                    return Ok(graph);
+                    return Ok(graph.clone());
                 }
 
-                let mut worklist = worklist.lock().unwrap();
-                // extend this by one node
-                let r = graph.into_region();
+                Err(first_cex.cloned())
+            };
+
+            let add_neighbors = || {
+                let r = graph.clone().into_region();
 
                 let neighbors = r
                     .neighbors()
@@ -272,35 +224,59 @@ fn search_happy_cover<F: Fn(Node) -> isize + Sync + Send>(
                     .into_iter()
                     .filter(|n| extensions.contains(n))
                     .collect::<Vec<_>>();
+
+                let mut new_graphs = vec![];
                 for n in neighbors {
                     let mut new = r.clone();
                     new.insert(n);
                     let new = Graph::from(new);
                     let cost = curr_cost + cost(n);
                     if !regions_tried.contains_sync(&new) {
-                        worklist.push(WithCost(new, cost));
+                        new_graphs.push(WithCost(new, cost));
                     }
                 }
+                worklist.push_all(new_graphs);
+            };
 
-                Err(first_cex)
-            })
-            .collect::<Vec<_>>();
+            match check_graph() {
+                Ok(graph) => {
+                    let mut s = solution.lock().unwrap();
+                    println!("FOUND {:?}", graph.nodes());
 
-        for result in solutions {
-            match result {
-                Ok(graph) => return Some(graph),
-                Err(Some(cex)) => {
-                    counterexamples.insert(cex.to_region(&allowed_in_covers));
+                    if s.is_none() {
+                        *s = Some(graph);
+                    }
+                    // signal that we're done
+                    worklist.done();
+
+                    return;
                 }
-                Err(None) => {}
+                Err(cex) => {
+                    add_neighbors();
+
+                    if let Some(cex) = cex {
+                        counterexamples
+                            .write()
+                            .unwrap()
+                            .insert(cex.to_region(&allowed_in_covers));
+                    }
+                }
             }
         }
-    }
+    };
 
-    None
+    // start the thread pool
+    thread::scope(|s| {
+        for _ in 0..n_threads {
+            s.spawn(worker);
+        }
+    });
+
+    solution.lock().unwrap().take()
 }
 
 fn main() {
+    env_logger::init();
     let cli = Cli::parse();
     let base = read_graph(cli.a, false);
     let mut extensions_r = read_graph(cli.b, false).into_region();

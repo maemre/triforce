@@ -24,6 +24,7 @@
 //! start at the origin in many data structures below.
 
 use ahash::{HashMap, HashMapExt, HashSet, HashSetExt};
+use rayon::iter::*;
 use std::{
     collections::{BTreeMap, BTreeSet as Set},
     num::NonZeroU8,
@@ -704,15 +705,22 @@ impl<'g> Tiling<'g> {
             }
 
             // Select a pair of regions up to ordering
-            for (i, r1) in regions.iter().enumerate() {
-                for r2 in &regions[..i] {
-                    for g_new in g.try_recombine(&recomb, r2, r1) {
-                        if !visited.contains(&g_new) {
-                            worklist.push(g_new);
-                        }
-                    }
-                }
-            }
+            worklist.par_extend(regions.iter().enumerate().par_bridge().flat_map(|(i, r1)| {
+                regions[..i]
+                    .iter()
+                    .flat_map(|r2| g.try_recombine(&recomb, r2, r1))
+                    .filter(|g_new| !visited.contains(g_new))
+                    .collect::<Vec<_>>()
+            }));
+            // for (i, r1) in  {
+            //     for r2 in &regions[..i] {
+            //         for g_new in g.try_recombine(&recomb, r2, r1) {
+            //             if !visited.contains(&g_new) {
+            //                 worklist.push(g_new);
+            //             }
+            //         }
+            //     }
+            // }
         }
 
         visited

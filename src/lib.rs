@@ -43,7 +43,7 @@ pub use fmt::*;
 use macros::*;
 
 // A node is just a pair of coordinates
-pub type Node = (isize, isize);
+pub type Node = (i8, i8);
 
 // A region is just a (connected) set of nodes
 #[derive(Eq, PartialEq, Ord, PartialOrd, Hash, Clone)]
@@ -71,11 +71,11 @@ impl Region {
         self.inner.contains(n)
     }
 
-    pub fn iter(&self) -> std::slice::Iter<'_, (isize, isize)> {
+    pub fn iter(&self) -> std::slice::Iter<'_, Node> {
         self.inner.iter()
     }
 
-    pub fn insert(&mut self, new: (isize, isize)) -> bool {
+    pub fn insert(&mut self, new: Node) -> bool {
         if self.contains(&new) {
             false
         } else {
@@ -382,7 +382,7 @@ impl Graph {
     pub fn triangle(n: usize) -> Graph {
         debug_assert!(n > 0);
         let nodes: Vec<Node> = (0..n)
-            .flat_map(|i| (0..(n - i)).map(move |j| (i as isize, (i + 2 * j) as isize)))
+            .flat_map(|i| (0..(n - i)).map(move |j| (i as i8, (i + 2 * j) as i8)))
             .collect();
         let indices = nodes.iter().enumerate().map(|(i, n)| (*n, i)).collect();
         Graph { nodes, indices }

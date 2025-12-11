@@ -294,8 +294,8 @@ fn main() {
         partial_tiling
             .keys()
             .map(|s| {
-                let dx = (n.0 - s.0).abs();
-                let dy = (n.1 - s.1).abs();
+                let dx = (n.0 - s.0).abs() as isize;
+                let dy = (n.1 - s.1).abs() as isize;
                 dx + 0.max(dy - dx)
             })
             .max()

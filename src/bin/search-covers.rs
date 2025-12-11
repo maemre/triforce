@@ -13,10 +13,9 @@ use clap::Parser;
 use triforce::cli::*;
 use triforce::*;
 
-/// Search for a fixed region F between A and B (A ⊆ F ⊆ B) such that all extensions
-/// of F within C:
-/// 1. have a connected meta-graph.
-/// 2. can complete the given partial tiling.
+/// Search for a fixed region F between A and B (A ⊆ F ⊆ B) such that all
+/// extensions of F within C have a meta-graph where each connected component
+/// contains a completion of the given partial tiling.
 ///
 /// This command automatically adds the nodes from A to B before the search.
 #[derive(Parser, Debug)]
@@ -150,7 +149,7 @@ fn search_happy_cover<F: Fn(Node) -> isize + Sync + Send>(
                 println!("#covers: {}", covers.len());
                 assert_ne!(covers.len(), 0);
 
-                // check if all covers have a connected metagraph
+                // check if all covers have a desired metagraph
 
                 let tilings_tried = AtomicUsize::new(0);
                 let first_cex = covers.iter().find_map(|cover| {
@@ -178,30 +177,42 @@ fn search_happy_cover<F: Fn(Node) -> isize + Sync + Send>(
 
                     tilings_tried.fetch_add(complete.len(), Ordering::SeqCst);
 
-                    // check if there is a completion of the partial tiling
-                    if complete.iter().any(|tiling| {
-                        partial_tile_set.iter().all(|tile| {
+                    // these are the nodes reachable from a completion of the partial tiling
+                    let mut seen = HashSet::<Tiling>::new();
+
+                    // find and mark connected components
+                    let mut success = false;
+                    for tiling in &complete {
+                        // check for early return
+                        if seen.len() == complete.len() {
+                            success = true;
+                            break;
+                        }
+
+                        if seen.contains(tiling) {
+                            continue;
+                        }
+
+                        if partial_tile_set.iter().all(|tile| {
                             let color = tiling.color(&tile[0]);
                             tile.iter().all(|n| tiling.color(n) == color)
-                        })
-                    }) {
-                        let first = (*complete.iter().min().unwrap()).clone();
-                        let complete_len = complete.len();
-                        drop(complete);
-                        let reachable = first.reachable(tile_size);
-
-                        if complete_len != reachable.len() {
-                            println!("failing cover: {:?}", cover.to_region(allowed_in_covers));
-                            Some(cover)
-                        } else {
-                            // this is a good cover, add it to the cache
-                            good_cover_cache.lock().unwrap().put(cover.clone(), ());
-
-                            None
+                        }) {
+                            // this is a completion of the partial tiling, mark all reachable nodes as seen.
+                            seen.extend(tiling.reachable(tile_size));
                         }
+                    }
+
+                    if seen.len() == complete.len() {
+                        success = true;
+                    }
+
+                    if success {
+                        // this is a good cover, add it to the cache
+                        good_cover_cache.lock().unwrap().put(cover.clone(), ());
+
+                        None
                     } else {
                         println!("failing cover: {:?}", cover.to_region(allowed_in_covers));
-                        // this cover can't be tiled by extending the partial tiling.
                         Some(cover)
                     }
                 });

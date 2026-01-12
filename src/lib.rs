@@ -37,6 +37,7 @@ pub mod cli;
 pub mod concurrency;
 mod fmt;
 mod macros;
+pub mod metagraph;
 
 #[allow(unused_imports)]
 pub use fmt::*;
@@ -671,6 +672,33 @@ impl<'g> Tiling<'g> {
         } else {
             Vec::new()
         }
+    }
+
+    /// Neighbors of this tiling in the metagraph built via recombinations
+    pub fn neighbors(
+        &self,
+        recomb: &BTreeMap<Region, Set<(Region, Region)>>,
+    ) -> HashSet<Tiling<'g>> {
+        let n_colors = self.next_color.0.get() as usize - 1;
+
+        let mut regions: Vec<Region> = vec![Region::new(); n_colors];
+
+        for (j, c) in self.color.iter().enumerate() {
+            regions[c.unwrap().0.get() as usize - 1].insert(self.graph.node_at(j));
+        }
+
+        // Select a pair of regions up to ordering
+        regions
+            .iter()
+            .enumerate()
+            .par_bridge()
+            .flat_map(|(i, r1)| {
+                regions[..i]
+                    .iter()
+                    .flat_map(|r2| self.try_recombine(&recomb, r2, r1))
+                    .collect::<Vec<_>>()
+            })
+            .collect()
     }
 
     // Find the graphs with region size `k` reachable from this graph by recombining graphs

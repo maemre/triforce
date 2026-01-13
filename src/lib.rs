@@ -38,6 +38,7 @@ pub mod concurrency;
 mod fmt;
 mod macros;
 pub mod metagraph;
+pub mod viz;
 
 #[allow(unused_imports)]
 pub use fmt::*;

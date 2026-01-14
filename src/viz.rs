@@ -1,9 +1,9 @@
-use std::{collections::HashMap, path::PathBuf};
+use std::collections::{HashMap, HashSet};
 
 use bevy::{
     asset::RenderAssetUsages,
     camera::RenderTarget,
-    color::palettes::basic,
+    color::palettes::{basic, css},
     mesh::{Indices, PrimitiveTopology},
     prelude::*,
     render::render_resource::{
@@ -14,50 +14,96 @@ use bevy::{
 use bevy_image_export::{ImageExport, ImageExportPlugin, ImageExportSettings, ImageExportSource};
 use hexx::mesh::{MeshInfo, PlaneMeshBuilder};
 use hexx::*;
-
-/// Input resource: your sparse colored tiles.
-#[derive(Resource)]
-struct TileColors(HashMap<Hex, Color>);
+use pipelines_ready::*;
 
 /// Rendering config (output + sizing).
 #[derive(Resource)]
 struct RenderConfig {
-    output_path: PathBuf,
+    output_dir: String,
     image_width: u32,
     image_height: u32,
-    hex_size: f32, // hexx layout "regular size" (world units)
+    hex_size: f32,
     margin_world: f32,
+    // frames to wait at the end
+    frames_left_to_render: usize,
+    // frames to wait between changing tiles
+    frames_to_wait: usize,
+    // shapes rendered so far
+    shapes_rendered: usize,
 }
 
-/// Hold onto the render target handle.
-#[derive(Resource)]
-struct TargetImage(Handle<Image>);
+const FRAMES_TO_WAIT_AFTER_LOADING: u8 = 5;
+const FRAMES_TO_RENDER: usize = 5;
+const BG_COLOR: Color = Color::WHITE;
 
-fn mk_hex(col: i32, row: i32) -> Hex {
+const COLORS: [Color; 16] = [
+    Color::Srgba(basic::BLACK),
+    Color::Srgba(basic::AQUA),
+    Color::Srgba(basic::BLUE),
+    Color::Srgba(basic::FUCHSIA),
+    Color::Srgba(basic::GRAY),
+    Color::Srgba(basic::GREEN),
+    Color::Srgba(basic::LIME),
+    Color::Srgba(basic::MAROON),
+    Color::Srgba(basic::NAVY),
+    Color::Srgba(basic::OLIVE),
+    Color::Srgba(basic::PURPLE),
+    Color::Srgba(basic::RED),
+    Color::Srgba(basic::SILVER),
+    Color::Srgba(basic::TEAL),
+    Color::Srgba(css::BEIGE),
+    Color::Srgba(basic::YELLOW),
+];
+
+#[derive(Resource, Default, PartialEq, Eq)]
+enum LoadingStatus {
+    // Loading assets and pipelines
+    #[default]
+    Loading,
+    // Counting down buffer frames
+    Countdown(u8),
+    // Loaded
+    Loaded,
+}
+
+/// The hexagon drawing data
+#[derive(Resource)]
+struct HexData {
+    mesh: Handle<Mesh>,
+    // the hexagons to be rendered
+    map: HashMap<Hex, Entity>,
+    // the text label to change
+    label: Entity,
+}
+
+pub fn mk_hex(col: i32, row: i32) -> Hex {
     Hex::from_doubled_coordinates([col, row], DoubledHexMode::DoubledHeight)
 }
 
-pub fn render() {
-    // Example data (replace this with your own HashMap<Hex, Color>).
-    let tiles: HashMap<Hex, Color> = [
-        (mk_hex(0, 0), Color::WHITE),
-        (mk_hex(0, 2), Color::WHITE),
-        (mk_hex(0, 4), Color::from(basic::BLUE)),
-        (mk_hex(0, 6), Color::from(basic::BLUE)),
-        (mk_hex(0, 8), Color::BLACK),
-        (mk_hex(1, 1), Color::WHITE),
-        (mk_hex(1, 3), Color::WHITE),
-        (mk_hex(1, 5), Color::WHITE),
-        (mk_hex(1, 7), Color::WHITE),
-    ]
-    .into();
+const fn resolve_color(color: crate::Color) -> Color {
+    COLORS[color.0.get() as usize % COLORS.len()]
+}
 
+/// An image to render
+#[derive(Resource)]
+pub struct RenderData {
+    pub tilings: Vec<HashMap<Hex, crate::Color>>,
+}
+
+/// To check whether all assets are loaded
+#[derive(Resource)]
+struct AssetsToLoad(Vec<UntypedHandle>);
+
+pub fn render(data: RenderData, output_dir: String) {
     let cfg = RenderConfig {
-        output_path: "out.png".into(),
-        image_width: 400,
-        image_height: 300,
+        output_dir,
+        image_width: 200,
+        image_height: 200,
         hex_size: 32.0,
         margin_world: 16.0,
+        frames_left_to_render: FRAMES_TO_RENDER,
+        frames_to_wait: 1,
+        shapes_rendered: 0,
     };
 
     let export_plugin = ImageExportPlugin::default();
@@ -74,13 +120,147 @@ pub fn render() {
             }),
             export_plugin,
         ))
-        .insert_resource(TileColors(tiles))
+        .add_plugins(PipelinesReadyPlugin)
         .insert_resource(cfg)
+        .insert_resource(data)
+        .insert_resource(LoadingStatus::default())
         .add_systems(Startup, setup)
-        .add_systems(Update, exit)
+        .add_systems(
+            Update,
+            (
+                check_loading_status,
+                render_next_shape,
+                exit_after_all_frames,
+            ),
+        )
         .run();
 
     export_threads.finish();
+}
+
+fn check_loading_status(
+    mut loading: ResMut<LoadingStatus>,
+    pipelines_ready: Res<PipelinesReady>,
+    asset_server: Res<AssetServer>,
+    assets_to_load: Res<AssetsToLoad>,
+) {
+    use LoadingStatus::*;
+    match *loading {
+        Loading => {
+            let all_assets_loaded = || {
+                assets_to_load
+                    .0
+                    .iter()
+                    .all(|asset| asset_server.is_loaded_with_dependencies(asset))
+            };
+
+            if pipelines_ready.0 && all_assets_loaded() {
+                *loading = Countdown(FRAMES_TO_WAIT_AFTER_LOADING);
+            }
+        }
+        Countdown(0) => *loading = Loaded,
+        Countdown(n) => *loading = Countdown(n - 1),
+        Loaded => {}
+    }
+    if *loading == LoadingStatus::Loaded {
+        return;
+    }
+
+    if pipelines_ready.0 {
+        *loading = LoadingStatus::Loaded;
+    }
+}
+
+fn render_next_shape(
+    mut commands: Commands,
+    mut data: ResMut<RenderData>,
+    mut cfg: ResMut<RenderConfig>,
+    hex_data: Res<HexData>,
+    mut materials: ResMut<Assets<ColorMaterial>>,
+    loading: Res<LoadingStatus>,
+) {
+    if *loading != LoadingStatus::Loaded {
+        return;
+    }
+
+    if cfg.frames_to_wait != 0 {
+        cfg.frames_to_wait -= 1;
+        return;
+    }
+
+    // Spawn each colored tile
+    if let Some(tiles) = data.tilings.pop() {
+        commands
+            .entity(hex_data.label)
+            .insert(Text2d(format!("{}:", cfg.shapes_rendered)));
+
+        for (hex, entity) in hex_data.map.iter() {
+            let color = tiles.get(&hex).cloned().map_or(BG_COLOR, resolve_color);
+            commands
+                .entity(*entity)
+                .insert(MeshMaterial2d(materials.add(color)));
+        }
+        cfg.frames_to_wait = 1;
+        cfg.shapes_rendered += 1;
+    }
+}
+
+fn create_all_tiles(
+    commands: &mut Commands,
+    data: &RenderData,
+    hex_mesh: Handle<Mesh>,
+    layout: &HexLayout,
+    mut materials: ResMut<Assets<ColorMaterial>>,
+) -> HashMap<Hex, Entity> {
+    // Spawn each colored tile
+    let tiles = data
+        .tilings
+        .iter()
+        .flat_map(|tiles| tiles.keys().cloned())
+        .collect::<HashSet<_>>();
+
+    tiles
+        .into_iter()
+        .map(|hex| {
+            let pos = layout.hex_to_world_pos(hex);
+            let entity = commands
+                .spawn((
+                    Mesh2d(hex_mesh.clone()),
+                    MeshMaterial2d(materials.add(BG_COLOR)),
+                    Transform::from_xyz(pos.x, pos.y, 0.),
+                ))
+                .id();
+            (hex, entity)
+        })
+        .collect::<HashMap<_, _>>()
+}
+
+fn create_label(
+    commands: &mut Commands,
+    pos: Vec2,
+    asset_server: &AssetServer,
+    assets_to_load: &mut AssetsToLoad,
+) -> Entity {
+    let font = asset_server.load("fonts/FiraSans-Bold.otf");
+    assets_to_load.0.push(font.clone().untyped());
+    let text_font = TextFont {
+        font: font.clone(),
+        font_size: 15.0,
+        ..default()
+    };
+    let text_justification = Justify::Center;
+    // Demonstrate changing translation
+    commands
+        .spawn((
+            Text2d::new(""),
+            text_font.clone(),
+            TextLayout::new_with_justify(text_justification),
+            TextBackgroundColor(Color::BLACK.with_alpha(0.2)),
+            TextColor(Color::from(basic::BLUE)),
+            Transform::from_translation(pos.extend(0.)),
+            // Text2dShadow::default(),
+        ))
+        .id()
 }
 
 fn setup(
@@ -88,16 +268,27 @@ fn setup(
     mut images: ResMut<Assets<Image>>,
     mut export_sources: ResMut<Assets<ImageExportSource>>,
     mut meshes: ResMut<Assets<Mesh>>,
-    mut materials: ResMut<Assets<ColorMaterial>>,
-    tiles: Res<TileColors>,
+    materials: ResMut<Assets<ColorMaterial>>,
     cfg: Res<RenderConfig>,
+    shapes: Res<RenderData>,
+    asset_server: Res<AssetServer>,
 ) {
     let layout = HexLayout::flat()
         .with_hex_size(cfg.hex_size)
         .with_origin(Vec2::ZERO);
 
-    let (min_x, max_x, min_y, max_y) =
-        bounds_from_hex_corners(&layout, tiles.0.keys(), cfg.margin_world);
+    let (min_x, max_x, min_y, max_y) = shapes
+        .tilings
+        .iter()
+        .map(|tiles| bounds_from_hex_corners(&layout, tiles.keys(), cfg.margin_world))
+        .fold((0f32, 0f32, 0f32, 0f32), |coord1, coord2| {
+            (
+                coord1.0.min(coord2.0),
+                coord1.1.max(coord2.1),
+                coord1.2.min(coord2.2),
+                coord1.3.max(coord2.3),
+            )
+        });
 
     println!("{:?}", (min_x, max_x, min_y, max_y));
 
@@ -128,8 +319,6 @@ fn setup(
         images.add(export_texture)
     };
 
-    // Camera: orthographic, looking straight down at the XZ plane.
-    // hexx PlaneMeshBuilder generates vertices on XZ (Y up) by default. :contentReference[oaicite:3]{index=3}
     let center_x = (min_x + max_x) * 0.5;
     let center_y = (min_y + max_y) * 0.5;
 
@@ -138,19 +327,15 @@ fn setup(
 
     let aspect = cfg.image_width as f32 / cfg.image_height as f32;
 
-    // Fit bounds while preserving output aspect:
     let mut view_w = world_w;
     let mut view_h = world_h;
     if view_w / view_h > aspect {
-        // too wide -> expand height
         view_h = view_w / aspect;
     } else {
-        // too tall -> expand width
         view_w = view_h * aspect;
     }
 
     let projection = OrthographicProjection {
-        // Fixed vertical+horizontal span in world units
         scaling_mode: bevy::camera::ScalingMode::Fixed {
             width: view_w,
             height: view_h,
@@ -162,6 +347,32 @@ fn setup(
 
     println!("{projection:?}");
 
+    // Reuse one hex mesh; place each tile via Transform translation.
+    let hexx_mesh_info = PlaneMeshBuilder::new(&layout)
+        .facing(Vec3::Z)
+        .center_aligned()
+        .build();
+    info!("{hexx_mesh_info:?}");
+    let hex_mesh = meshes.add(mesh_from_hexx_mesh_info(hexx_mesh_info));
+
+    let map = create_all_tiles(&mut commands, &shapes, hex_mesh.clone(), &layout, materials);
+    let mut assets_to_load = AssetsToLoad(vec![]);
+    warn!("{min_x}, {min_y}");
+    let label = create_label(
+        &mut commands,
+        Vec2::new(0., view_h / 2.),
+        &asset_server,
+        &mut assets_to_load,
+    );
+
+    commands.insert_resource(HexData {
+        mesh: hex_mesh,
+        map,
+        label,
+    });
+    commands.insert_resource(layout);
+    commands.insert_resource(assets_to_load);
+
     for target in [
         RenderTarget::Image(output_texture_handle.clone().into()),
         RenderTarget::Window(bevy::window::WindowRef::Primary),
@@ -170,46 +381,23 @@ fn setup(
             Camera2d::default(),
             Camera {
                 target,
+                clear_color: ClearColorConfig::Custom(Color::WHITE),
                 ..default()
             },
             Projection::Orthographic(projection.clone()),
             Transform::from_xyz(center_x, center_y, 0.),
-            //     .looking_at(Vec3::new(center_x, center_y, 0.), Vec3::Z),
         ));
     }
 
-    // Spawn the ImageExport component to initiate the export of the output texture.
     commands.spawn((
         ImageExport(export_sources.add(output_texture_handle)),
         ImageExportSettings {
-            // Frames will be saved to "./out/[#####].png".
-            output_dir: "out".into(),
-            // Choose "exr" for HDR renders.
+            output_dir: cfg.output_dir.clone(),
             extension: "png".into(),
         },
     ));
-
-    // Reuse ONE hex mesh; place each tile via Transform translation.
-    let hexx_mesh_info = PlaneMeshBuilder::new(&layout)
-        .facing(Vec3::Z)
-        .center_aligned()
-        .build();
-    info!("{hexx_mesh_info:?}");
-    let mesh_handle = meshes.add(mesh_from_hexx_mesh_info(hexx_mesh_info));
-
-    // Spawn each colored tile
-    for (h, color) in tiles.0.iter() {
-        let pos = layout.hex_to_world_pos(*h);
-        commands.spawn((
-            Mesh2d(mesh_handle.clone()),
-            MeshMaterial2d(materials.add(*color)),
-            Transform::from_xyz(pos.x, pos.y, 0.),
-        ));
-    }
 }
 
-/// Convert hexx::mesh::MeshInfo to bevy::render::mesh::Mesh.
-/// (hexx provides raw vertex/normals/uv/index buffers.) :contentReference[oaicite:6]{index=6}
 fn mesh_from_hexx_mesh_info(info: MeshInfo) -> Mesh {
     Mesh::new(
         PrimitiveTopology::TriangleList,
@@ -234,7 +422,7 @@ fn bounds_from_hex_corners<'a>(
     let mut max_y = 0.0f32;
 
     for h in hexes {
-        let corners = layout.hex_corners(*h); // :contentReference[oaicite:7]{index=7}
+        let corners = layout.hex_corners(*h);
         for c in corners {
             if !any {
                 any = true;
@@ -264,8 +452,52 @@ fn bounds_from_hex_corners<'a>(
     )
 }
 
-fn exit(mut exit: MessageWriter<AppExit>, mouse: Res<ButtonInput<MouseButton>>) {
-    if mouse.just_pressed(MouseButton::Left) {
+fn exit_after_all_frames(
+    mut exit: MessageWriter<AppExit>,
+    mut cfg: ResMut<RenderConfig>,
+    data: Res<RenderData>,
+    loading: Res<LoadingStatus>,
+) {
+    if *loading != LoadingStatus::Loaded || !data.tilings.is_empty() {
+        return;
+    }
+
+    if cfg.frames_left_to_render == 0 {
         exit.write(AppExit::Success);
+    }
+    cfg.frames_left_to_render -= 1;
+}
+
+// Source: Bevy examples <https://bevy.org/examples/games/loading-screen/>
+//
+// Licensed under MIT license
+mod pipelines_ready {
+    use bevy::{
+        prelude::*,
+        render::{render_resource::*, *},
+    };
+
+    pub struct PipelinesReadyPlugin;
+    impl Plugin for PipelinesReadyPlugin {
+        fn build(&self, app: &mut App) {
+            app.insert_resource(PipelinesReady::default());
+
+            // In order to gain access to the pipelines status, we have to
+            // go into the `RenderApp`, grab the resource from the main App
+            // and then update the pipelines status from there.
+            // Writing between these Apps can only be done through the
+            // `ExtractSchedule`.
+            app.sub_app_mut(RenderApp)
+                .add_systems(ExtractSchedule, update_pipelines_ready);
+        }
+    }
+
+    #[derive(Resource, Debug, Default)]
+    pub struct PipelinesReady(pub bool);
+
+    fn update_pipelines_ready(mut main_world: ResMut<MainWorld>, pipelines: Res<PipelineCache>) {
+        if let Some(mut pipelines_ready) = main_world.get_resource_mut::<PipelinesReady>() {
+            pipelines_ready.0 = pipelines.waiting_pipelines().count() == 0;
+        }
     }
 }

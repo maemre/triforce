@@ -357,10 +357,14 @@ pub fn recomb(n: usize) -> BTreeMap<Region, Set<(Region, Region)>> {
 }
 
 #[derive(PartialEq, Eq, PartialOrd, Ord, Hash, Debug, Clone, Copy)]
-pub struct Color(NonZeroU8);
+pub struct Color(pub NonZeroU8);
 impl Color {
     fn increment(&mut self) {
         self.0 = self.0.checked_add(1).unwrap();
+    }
+
+    pub const fn new(c: u8) -> Self {
+        Color(NonZeroU8::new(c).unwrap())
     }
 }
 

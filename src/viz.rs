@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet};
+use ahash::{HashMap, HashSet};
 
 use bevy::{
     asset::RenderAssetUsages,
@@ -35,8 +35,9 @@ struct RenderConfig {
 const FRAMES_TO_WAIT_AFTER_LOADING: u8 = 5;
 const FRAMES_TO_RENDER: usize = 5;
 const BG_COLOR: Color = Color::WHITE;
+const PADDING: f32 = 20.;
 
-const COLORS: [Color; 16] = [
+const COLORS: [Color; 18] = [
     Color::Srgba(basic::BLACK),
     Color::Srgba(basic::AQUA),
     Color::Srgba(basic::BLUE),
@@ -44,15 +45,17 @@ const COLORS: [Color; 16] = [
     Color::Srgba(basic::GRAY),
     Color::Srgba(basic::GREEN),
     Color::Srgba(basic::LIME),
-    Color::Srgba(basic::MAROON),
     Color::Srgba(basic::NAVY),
-    Color::Srgba(basic::OLIVE),
+    Color::Srgba(css::GOLD),
     Color::Srgba(basic::PURPLE),
     Color::Srgba(basic::RED),
     Color::Srgba(basic::SILVER),
-    Color::Srgba(basic::TEAL),
-    Color::Srgba(css::BEIGE),
+    Color::Srgba(css::ORANGE),
     Color::Srgba(basic::YELLOW),
+    Color::Srgba(css::PINK),
+    Color::Srgba(css::LIGHT_BLUE),
+    Color::Srgba(basic::MAROON),
+    Color::Srgba(basic::TEAL),
 ];
 
 #[derive(Resource, Default, PartialEq, Eq)]
@@ -227,7 +230,7 @@ fn create_all_tiles(
                 .spawn((
                     Mesh2d(hex_mesh.clone()),
                     MeshMaterial2d(materials.add(BG_COLOR)),
-                    Transform::from_xyz(pos.x, pos.y, 0.),
+                    Transform::from_xyz(pos.x, -pos.y, 0.),
                 ))
                 .id();
             (hex, entity)
@@ -245,7 +248,7 @@ fn create_label(
     assets_to_load.0.push(font.clone().untyped());
     let text_font = TextFont {
         font: font.clone(),
-        font_size: 15.0,
+        font_size: 50.0,
         ..default()
     };
     let text_justification = Justify::Center;
@@ -289,6 +292,13 @@ fn setup(
                 coord1.3.max(coord2.3),
             )
         });
+
+    let (min_x, max_x, min_y, max_y) = (
+        min_x - PADDING,
+        max_x + PADDING,
+        min_y - PADDING,
+        max_y + PADDING,
+    );
 
     println!("{:?}", (min_x, max_x, min_y, max_y));
 
@@ -360,7 +370,7 @@ fn setup(
     warn!("{min_x}, {min_y}");
     let label = create_label(
         &mut commands,
-        Vec2::new(0., view_h / 2.),
+        Vec2::new(0., 0.),
         &asset_server,
         &mut assets_to_load,
     );
@@ -414,8 +424,6 @@ fn bounds_from_hex_corners<'a>(
     hexes: impl Iterator<Item = &'a Hex>,
     margin: f32,
 ) -> (f32, f32, f32, f32) {
-    let mut any = false;
-
     let mut min_x = 0.0f32;
     let mut max_x = 0.0f32;
     let mut min_y = 0.0f32;
@@ -424,31 +432,18 @@ fn bounds_from_hex_corners<'a>(
     for h in hexes {
         let corners = layout.hex_corners(*h);
         for c in corners {
-            if !any {
-                any = true;
-                min_x = c.x;
-                max_x = c.x;
-                min_y = c.y;
-                max_y = c.y;
-            } else {
-                min_x = min_x.min(c.x);
-                max_x = max_x.max(c.x);
-                min_y = min_y.min(c.y);
-                max_y = max_y.max(c.y);
-            }
+            min_x = min_x.min(c.x);
+            max_x = max_x.max(c.x);
+            min_y = min_y.min(c.y);
+            max_y = max_y.max(c.y);
         }
-    }
-
-    // Handle empty input gracefully: render a blank image.
-    if !any {
-        return (-1.0, 1.0, -1.0, 1.0);
     }
 
     (
         min_x - margin,
         max_x + margin,
-        min_y - margin,
-        max_y + margin,
+        -max_y - margin,
+        -min_y + margin,
     )
 }
 

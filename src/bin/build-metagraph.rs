@@ -9,6 +9,7 @@ use std::collections::BTreeMap;
 use std::num::NonZero;
 use std::path::PathBuf;
 use triforce::metagraph::Metagraph;
+use triforce::viz::mk_hex;
 
 use clap::Parser;
 use triforce::cli::*;
@@ -49,7 +50,7 @@ fn main() {
 
     info!("writing the metagraph...");
     std::fs::write(
-        cli.output,
+        cli.output.clone(),
         &serde_json::ser::to_vec(&metagraph.meta).unwrap(),
     )
     .unwrap();
@@ -90,4 +91,28 @@ fn main() {
         &[dot::Config::EdgeNoLabel, dot::Config::NodeNoLabel],
     );
     println!("{:?}", dot);
+
+    // generate the tilings
+    let tilings = smallest_cc_graph
+        .node_weights()
+        .map(|i| {
+            let tiling = &metagraph.nodes[*i];
+            tiling
+                .graph
+                .nodes()
+                .iter()
+                .map(|node| {
+                    (
+                        mk_hex(node.0 as i32, node.1 as i32),
+                        tiling.color(node).unwrap(),
+                    )
+                })
+                .collect::<HashMap<_, _>>()
+        })
+        .collect::<Vec<_>>();
+
+    viz::render(
+        viz::RenderData { tilings },
+        format!("{}-scc", cli.output.as_path().to_str().unwrap()),
+    )
 }

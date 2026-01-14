@@ -60,7 +60,7 @@ def main() -> None:
     ap.add_argument("--padding", type=int, default=0, help="Padding (pixels) between cells")
     args = ap.parse_args()
 
-    build_grid_png(args.input_dir, args.columns, args.output, args.padding, bg)
+    build_grid_png(args.input_dir, args.columns, args.output, args.padding)
 
 
 if __name__ == "__main__":

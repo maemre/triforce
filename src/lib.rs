@@ -427,7 +427,7 @@ impl Graph {
 /// Tiling of a graph.  We borrow the graph to avoid copying it.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct Tiling<'graph> {
-    graph: &'graph Graph,
+    pub graph: &'graph Graph,
     // color of each node, represented as a 2D array, so we might generate
     // unused slots in this list but it makes lookups faster.
     color: Vec<Option<Color>>,

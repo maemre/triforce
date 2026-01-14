@@ -12,6 +12,7 @@ use triforce::metagraph::Metagraph;
 use triforce::viz::mk_hex;
 
 use clap::Parser;
+use std::str::FromStr;
 use triforce::cli::*;
 use triforce::*;
 
@@ -86,18 +87,20 @@ fn main() {
     let mut smallest_cc_graph = metagraph.meta.clone();
     smallest_cc_graph.retain_nodes(|_, idx| smallest_cc.contains(&idx));
 
-    let dot = Dot::with_config(
+    let dot = Dot::with_attr_getters(
         &smallest_cc_graph,
         &[dot::Config::EdgeNoLabel, dot::Config::NodeNoLabel],
+        &|_, _| String::new(),
+        &|_, (_, s)| format!(r#"label = "{s}""#),
     );
     println!("{:?}", dot);
 
     // generate the tilings
-    let tilings = smallest_cc_graph
+    let mut tilings = smallest_cc_graph
         .node_weights()
         .map(|i| {
             let tiling = &metagraph.nodes[*i];
-            tiling
+            let tiles = tiling
                 .graph
                 .nodes()
                 .iter()
@@ -107,9 +110,11 @@ fn main() {
                         tiling.color(node).unwrap(),
                     )
                 })
-                .collect::<HashMap<_, _>>()
+                .collect::<HashMap<_, _>>();
+            (i.to_string(), tiles)
         })
         .collect::<Vec<_>>();
+    tilings.sort_by_key(|(i, _)| -i32::from_str(i).unwrap());
 
     viz::render(
         viz::RenderData { tilings },

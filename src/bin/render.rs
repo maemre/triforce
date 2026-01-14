@@ -23,6 +23,8 @@ fn main() {
                 .map(|(x, y)| (mk_hex(*x as i32, *y as i32), Color::new(1)))
                 .collect()
         })
+        .enumerate()
+        .map(|(i, m)| (i.to_string(), m))
         .collect::<Vec<_>>();
 
     println!("there are {} recomb regions of interest", tiles.len());

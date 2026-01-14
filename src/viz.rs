@@ -90,7 +90,7 @@ const fn resolve_color(color: crate::Color) -> Color {
 /// An image to render
 #[derive(Resource)]
 pub struct RenderData {
-    pub tilings: Vec<HashMap<Hex, crate::Color>>,
+    pub tilings: Vec<(String, HashMap<Hex, crate::Color>)>,
 }
 
 /// To check whether all assets are loaded
@@ -192,10 +192,8 @@ fn render_next_shape(
     }
 
     // Spawn each colored tile
-    if let Some(tiles) = data.tilings.pop() {
-        commands
-            .entity(hex_data.label)
-            .insert(Text2d(format!("{}:", cfg.shapes_rendered)));
+    if let Some((label, tiles)) = data.tilings.pop() {
+        commands.entity(hex_data.label).insert(Text2d(label));
 
         for (hex, entity) in hex_data.map.iter() {
             let color = tiles.get(&hex).cloned().map_or(BG_COLOR, resolve_color);
@@ -219,7 +217,7 @@ fn create_all_tiles(
     let tiles = data
         .tilings
         .iter()
-        .flat_map(|tiles| tiles.keys().cloned())
+        .flat_map(|tiles| tiles.1.keys().cloned())
         .collect::<HashSet<_>>();
 
     tiles
@@ -283,7 +281,7 @@ fn setup(
     let (min_x, max_x, min_y, max_y) = shapes
         .tilings
         .iter()
-        .map(|tiles| bounds_from_hex_corners(&layout, tiles.keys(), cfg.margin_world))
+        .map(|tiles| bounds_from_hex_corners(&layout, tiles.1.keys(), cfg.margin_world))
         .fold((0f32, 0f32, 0f32, 0f32), |coord1, coord2| {
             (
                 coord1.0.min(coord2.0),
@@ -360,6 +358,7 @@ fn setup(
     // Reuse one hex mesh; place each tile via Transform translation.
     let hexx_mesh_info = PlaneMeshBuilder::new(&layout)
         .facing(Vec3::Z)
+        .with_scale(Vec3::splat(0.9))
         .center_aligned()
         .build();
     info!("{hexx_mesh_info:?}");

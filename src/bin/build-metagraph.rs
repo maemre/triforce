@@ -1,12 +1,8 @@
-use ahash::{HashMap, HashMapExt, HashSet, HashSetExt};
+use ahash::HashMap;
 use itertools::Itertools;
-use log::{info, warn};
-use lru::LruCache;
+use log::info;
 use petgraph::dot::{self, Dot};
 use rustworkx_core::connectivity::connected_components;
-use scc::HashSet as ConcurrentHashSet;
-use std::collections::BTreeMap;
-use std::num::NonZero;
 use std::path::PathBuf;
 use triforce::metagraph::Metagraph;
 use triforce::viz::mk_hex;
@@ -30,12 +26,23 @@ struct Cli {
 
     /// Where to save the metagraph as a JSON file.
     output: PathBuf,
+
+    /// Dump the smallest connected component
+    #[arg(long)]
+    dump_cc: bool,
 }
 
 fn main() {
     env_logger::init();
     let cli = Cli::parse();
     let base_graph = read_graph(cli.graph, false);
+
+    println!(
+        "Loaded:\n{}",
+        serde_json::ser::to_string(&MaybeRegion::from_region(base_graph.clone().into_region()))
+            .unwrap()
+    );
+
     let tile_size = cli.tile_size;
 
     assert!(tile_size > 1, "Tile size must be greater than 1");
@@ -82,42 +89,44 @@ fn main() {
         println!("{n_nodes:>5}, {n_edges:>5}");
     }
 
-    println!("the smallest connected component:");
-    let smallest_cc = cc.iter().find(|s| s.len() == by_size[0].0).unwrap();
-    let mut smallest_cc_graph = metagraph.meta.clone();
-    smallest_cc_graph.retain_nodes(|_, idx| smallest_cc.contains(&idx));
+    if cli.dump_cc {
+        println!("the smallest connected component:");
+        let smallest_cc = cc.iter().find(|s| s.len() == by_size[0].0).unwrap();
+        let mut smallest_cc_graph = metagraph.meta.clone();
+        smallest_cc_graph.retain_nodes(|_, idx| smallest_cc.contains(&idx));
 
-    let dot = Dot::with_attr_getters(
-        &smallest_cc_graph,
-        &[dot::Config::EdgeNoLabel, dot::Config::NodeNoLabel],
-        &|_, _| String::new(),
-        &|_, (_, s)| format!(r#"label = "{s}""#),
-    );
-    println!("{:?}", dot);
+        let dot = Dot::with_attr_getters(
+            &smallest_cc_graph,
+            &[dot::Config::EdgeNoLabel, dot::Config::NodeNoLabel],
+            &|_, _| String::new(),
+            &|_, (_, s)| format!(r#"label = "{s}""#),
+        );
+        println!("{:?}", dot);
 
-    // generate the tilings
-    let mut tilings = smallest_cc_graph
-        .node_weights()
-        .map(|i| {
-            let tiling = &metagraph.nodes[*i];
-            let tiles = tiling
-                .graph
-                .nodes()
-                .iter()
-                .map(|node| {
-                    (
-                        mk_hex(node.0 as i32, node.1 as i32),
-                        tiling.color(node).unwrap(),
-                    )
-                })
-                .collect::<HashMap<_, _>>();
-            (i.to_string(), tiles)
-        })
-        .collect::<Vec<_>>();
-    tilings.sort_by_key(|(i, _)| -i32::from_str(i).unwrap());
+        // generate the tilings
+        let mut tilings = smallest_cc_graph
+            .node_weights()
+            .map(|i| {
+                let tiling = &metagraph.nodes[*i];
+                let tiles = tiling
+                    .graph
+                    .nodes()
+                    .iter()
+                    .map(|node| {
+                        (
+                            mk_hex(node.0 as i32, node.1 as i32),
+                            tiling.color(node).unwrap(),
+                        )
+                    })
+                    .collect::<HashMap<_, _>>();
+                (i.to_string(), tiles)
+            })
+            .collect::<Vec<_>>();
+        tilings.sort_by_key(|(i, _)| -i32::from_str(i).unwrap());
 
-    viz::render(
-        viz::RenderData { tilings },
-        format!("{}-scc", cli.output.as_path().to_str().unwrap()),
-    )
+        viz::render(
+            viz::RenderData { tilings },
+            format!("{}-scc", cli.output.as_path().to_str().unwrap()),
+        )
+    }
 }

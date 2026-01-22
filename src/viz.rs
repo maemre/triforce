@@ -196,7 +196,7 @@ fn render_next_shape(
         commands.entity(hex_data.label).insert(Text2d(label));
 
         for (hex, entity) in hex_data.map.iter() {
-            let color = tiles.get(&hex).cloned().map_or(BG_COLOR, resolve_color);
+            let color = tiles.get(hex).cloned().map_or(BG_COLOR, resolve_color);
             commands
                 .entity(*entity)
                 .insert(MeshMaterial2d(materials.add(color)));
@@ -387,7 +387,7 @@ fn setup(
         RenderTarget::Window(bevy::window::WindowRef::Primary),
     ] {
         commands.spawn((
-            Camera2d::default(),
+            Camera2d,
             Camera {
                 target,
                 clear_color: ClearColorConfig::Custom(Color::WHITE),

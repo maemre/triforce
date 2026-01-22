@@ -59,7 +59,7 @@ fn main() {
     info!("writing the metagraph...");
     std::fs::write(
         cli.output.clone(),
-        &serde_json::ser::to_vec(&metagraph.meta).unwrap(),
+        serde_json::ser::to_vec(&metagraph.meta).unwrap(),
     )
     .unwrap();
 

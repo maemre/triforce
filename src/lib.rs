@@ -187,7 +187,7 @@ impl CompactRegion {
                 .enumerate()
                 .filter_map(|(i, n)| {
                     if self.0 & (1 << i) != 0 {
-                        Some(n.clone())
+                        Some(*n)
                     } else {
                         None
                     }
@@ -199,7 +199,7 @@ impl CompactRegion {
     #[inline(always)]
     pub fn contains(&self, n: &Node, universe: &Graph) -> bool {
         debug_assert!(universe.len() < BYTES_IN_COMPACT_REGION * 8);
-        let result = self.0 & (1 << universe.indices[&n]) != 0;
+        let result = self.0 & (1 << universe.indices[n]) != 0;
         debug_assert_eq!(self.to_region(universe).contains(n), result);
         result
     }
@@ -231,11 +231,10 @@ impl MaybeRegion {
             return None;
         }
 
-        if let Some(n) = self.0.first() {
-            if required_to_start_at_origin && *n != (0, 0) {
+        if let Some(n) = self.0.first()
+            && required_to_start_at_origin && *n != (0, 0) {
                 return None;
             }
-        }
 
         Some(Region::from(self.0))
     }
@@ -600,7 +599,7 @@ impl<'g> Tiling<'g> {
 
             let neighbors = region
                 .neighbors()
-                .unwrap_or_else(|| Set::from([g.indices.first_key_value().unwrap().0.clone()]));
+                .unwrap_or_else(|| Set::from([*g.indices.first_key_value().unwrap().0]));
 
             debug!("{:#?}", neighbors);
 
@@ -700,7 +699,7 @@ impl<'g> Tiling<'g> {
             .flat_map(|(i, r1)| {
                 regions[..i]
                     .iter()
-                    .flat_map(|r2| self.try_recombine(&recomb, r2, r1))
+                    .flat_map(|r2| self.try_recombine(recomb, r2, r1))
                     .collect::<Vec<_>>()
             })
             .collect()

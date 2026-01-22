@@ -121,7 +121,7 @@ fn search_happy_cover<F: Fn(Node) -> isize + Sync + Send>(
                     let cexs = counterexamples.read().unwrap();
                     Tiling::min_covers(
                         &graph,
-                        &allowed_in_covers,
+                        allowed_in_covers,
                         tile_size,
                         if exact_cover_check { &cexs } else { &empty_set },
                     )
@@ -157,7 +157,7 @@ fn search_happy_cover<F: Fn(Node) -> isize + Sync + Send>(
                     // this is an expensive operation w.r.t. multithreading
                     {
                         // cannot use `contains` because it does not update the LRU cache.
-                        if good_cover_cache.lock().unwrap().get(&cover).is_some() {
+                        if good_cover_cache.lock().unwrap().get(cover).is_some() {
                             return None;
                         }
                     }
@@ -208,7 +208,7 @@ fn search_happy_cover<F: Fn(Node) -> isize + Sync + Send>(
 
                     if success {
                         // this is a good cover, add it to the cache
-                        good_cover_cache.lock().unwrap().put(cover.clone(), ());
+                        good_cover_cache.lock().unwrap().put(*cover, ());
 
                         None
                     } else {
@@ -269,7 +269,7 @@ fn search_happy_cover<F: Fn(Node) -> isize + Sync + Send>(
                         counterexamples
                             .write()
                             .unwrap()
-                            .insert(cex.to_region(&allowed_in_covers));
+                            .insert(cex.to_region(allowed_in_covers));
                     }
                 }
             }

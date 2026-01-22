@@ -29,5 +29,5 @@ fn main() {
 
     println!("there are {} recomb regions of interest", tiles.len());
 
-    render(RenderData { tilings: tiles }, format!("out"));
+    render(RenderData { tilings: tiles }, "out".to_string());
 }

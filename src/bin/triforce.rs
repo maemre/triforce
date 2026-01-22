@@ -21,7 +21,7 @@ fn main() {
     let k = cli.tile_size;
 
     assert!(
-        graph.len() % k == 0,
+        graph.len().is_multiple_of(k),
         "Size of the graph ({}) is not a multiple of the tile size ({k})",
         graph.len()
     );

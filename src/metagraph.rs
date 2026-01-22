@@ -1,7 +1,7 @@
 //! Metagraph processing utilities
 
 use crate::*;
-use log::{info, warn};
+use log::info;
 use petgraph::graph::UnGraph;
 
 /// A graph of tilings connected via recomb moves, i.e. the transition system

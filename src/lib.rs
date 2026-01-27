@@ -36,6 +36,7 @@ use serde::{Deserialize, Serialize};
 pub mod cli;
 pub mod concurrency;
 mod fmt;
+pub mod graph;
 mod macros;
 pub mod metagraph;
 pub mod viz;

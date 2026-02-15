@@ -665,7 +665,6 @@ impl<'g> Tiling<'g> {
         combined.append(&mut shift(flip(origin), r2));
 
         if let Some(new_splits) = recomb.get(&combined) {
-            debug!("generated:");
             new_splits
                 .iter()
                 .map(|(r1, r2)| {
@@ -673,7 +672,6 @@ impl<'g> Tiling<'g> {
                     g.paint(&shift(origin, r1), c1);
                     g.paint(&shift(origin, r2), c2);
                     g.normalize();
-                    debug!("{g}");
                     g
                 })
                 .collect()

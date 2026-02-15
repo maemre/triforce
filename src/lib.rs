@@ -89,6 +89,15 @@ impl Region {
         }
     }
 
+    pub fn remove(&mut self, node_to_remove: &Node) -> bool {
+        if let Some(i) = self.inner.iter().position(|n| n == node_to_remove) {
+            self.inner.remove(i);
+            true
+        } else {
+            false
+        }
+    }
+
     pub fn len(&self) -> usize {
         self.inner.len()
     }
@@ -233,9 +242,11 @@ impl MaybeRegion {
         }
 
         if let Some(n) = self.0.first()
-            && required_to_start_at_origin && *n != (0, 0) {
-                return None;
-            }
+            && required_to_start_at_origin
+            && *n != (0, 0)
+        {
+            return None;
+        }
 
         Some(Region::from(self.0))
     }

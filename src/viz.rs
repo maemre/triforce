@@ -117,6 +117,7 @@ pub fn render(data: RenderData, output_dir: String) {
             DefaultPlugins.set(WindowPlugin {
                 primary_window: Some(Window {
                     resolution: (cfg.image_width, cfg.image_height).into(),
+                    visible: false,
                     ..default()
                 }),
                 ..default()
@@ -384,17 +385,17 @@ fn setup(
 
     for target in [
         RenderTarget::Image(output_texture_handle.clone().into()),
-        RenderTarget::Window(bevy::window::WindowRef::Primary),
+        // RenderTarget::Window(bevy::window::WindowRef::Primary),
     ] {
         commands.spawn((
             Camera2d,
             Camera {
-                target,
                 clear_color: ClearColorConfig::Custom(Color::WHITE),
                 ..default()
             },
             Projection::Orthographic(projection.clone()),
             Transform::from_xyz(center_x, center_y, 0.),
+            target,
         ));
     }
 

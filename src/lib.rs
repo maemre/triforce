@@ -664,14 +664,6 @@ impl<'g> Tiling<'g> {
         let mut combined = shift(flip(origin), r1);
         combined.append(&mut shift(flip(origin), r2));
 
-        debug_only! {
-                eprintln!("r1: {r1:?}");
-                eprintln!("r2: {r2:?}");
-                eprintln!("combined: {combined:?}");
-                eprintln!("self:\n{self}");
-                eprintln!("c1: {c1}, c2: {c2}");
-        }
-
         if let Some(new_splits) = recomb.get(&combined) {
             debug!("generated:");
             new_splits

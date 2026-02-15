@@ -3,9 +3,20 @@
 
 use std::collections::{HashMap, HashSet};
 
+use petgraph::visit::IntoNodeIdentifiers;
 use rustworkx_core::connectivity::{connected_components, stoer_wagner_min_cut};
 use rustworkx_core::petgraph::graph::{NodeIndex, UnGraph};
 use rustworkx_core::petgraph::visit::EdgeRef;
+use rustworkx_core::shortest_path::single_source_all_shortest_paths;
+
+/// Calculate a path along the diameter naively
+pub fn diameter<N>(
+    g: &UnGraph<N, ()>,
+) -> Vec<NodeIndex> {
+    g.node_indices().map(|start| {
+        single_source_all_shortest_paths(g, start, |_| Ok::<_, ()>(1)).unwrap().into_values().flatten().max_by_key(|v| v.len()).unwrap_or_default()
+    }).max_by_key(|v| v.len()).unwrap()
+}
 
 // Bottleneck calculation via edge connectivity
 

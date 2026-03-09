@@ -170,7 +170,7 @@ pub const BYTES_IN_COMPACT_REGION: usize = size_of::<u128>();
 
 /// Compact representation of a region as a bitset.
 /// Needs the allowed nodes to be converted into a region.
-#[derive(Copy, Clone, PartialEq, Eq, Hash)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct CompactRegion(u128);
 
 impl CompactRegion {
@@ -224,6 +224,58 @@ mod test {
         let universe = Graph::triangle(5);
         let r = Region::from(vec![(0, 0), (0, 2), (1, 1), (2, 2), (3, 5), (4, 4)]);
         assert_eq!(r, CompactRegion::from(&r, &universe).to_region(&universe));
+    }
+
+    /// Check that par_min_covers returns the same set as min_covers for the given graph/extension.
+    fn assert_par_min_covers_eq(g: &Graph, allowed: &Graph, tile_size: usize) {
+        let counterexamples = HashSet::default();
+        let seq = Tiling::min_covers(g, allowed, tile_size, &counterexamples);
+        let par = Tiling::par_min_covers(g, allowed, tile_size, &counterexamples);
+        assert_eq!(
+            seq.is_none(),
+            par.is_none(),
+            "both should agree on None/Some"
+        );
+        if let (Some(seq_set), Some(par_set)) = (seq, par) {
+            assert_eq!(seq_set, par_set, "cover sets should be identical");
+        }
+    }
+
+    #[test]
+    fn par_min_covers_equiv_triangle3_4() {
+        let g = Graph::triangle(3);
+        let allowed = Graph::triangle(4);
+        assert_par_min_covers_eq(&g, &allowed, 2);
+    }
+
+    #[test]
+    fn par_min_covers_equiv_triangle4_5() {
+        let g = Graph::triangle(4);
+        let allowed = Graph::triangle(5);
+        assert_par_min_covers_eq(&g, &allowed, 2);
+    }
+
+    #[test]
+    fn par_min_covers_equiv_triangle3_4_tile3() {
+        let g = Graph::triangle(3);
+        let allowed = Graph::triangle(4);
+        assert_par_min_covers_eq(&g, &allowed, 3);
+    }
+
+    #[test]
+    fn compact_region_ord() {
+        // empty < non-empty
+        let universe = Graph::triangle(4);
+        let empty = CompactRegion::empty();
+        let r1 = Region::from(vec![(0, 0)]);
+        let r2 = Region::from(vec![(0, 0), (1, 1)]);
+        let cr1 = CompactRegion::from(&r1, &universe);
+        let cr2 = CompactRegion::from(&r2, &universe);
+        assert!(empty < cr1);
+        assert!(cr1 < cr2);
+        // reflexive
+        assert_eq!(empty.cmp(&empty), std::cmp::Ordering::Equal);
+        assert_eq!(cr1.cmp(&cr1), std::cmp::Ordering::Equal);
     }
 }
 
@@ -664,6 +716,100 @@ impl<'g> Tiling<'g> {
 
         visited.retain(|cover| g.nodes.iter().all(|n| cover.contains(n, allowed_in_covers)));
         Some(visited)
+    }
+
+    /// Parallel version of [`Self::min_covers`] using the `Worklist` work-stealing infrastructure.
+    pub fn par_min_covers(
+        g: &'g Graph,
+        allowed_in_covers: &'g Graph,
+        tile_size: usize,
+        counterexamples: &HashSet<Region>,
+    ) -> Option<HashSet<CompactRegion>> {
+        use crate::concurrency::{Task, WithCost, Worklist};
+        use scc::HashSet as ConcurrentHashSet;
+        use std::sync::atomic::{AtomicBool, Ordering};
+        use std::thread;
+
+        assert!(!g.nodes.is_empty());
+        assert!(tile_size > 0);
+        assert!(
+            g.nodes.iter().all(|n| allowed_in_covers.contains(n)),
+            "the extension must be a superset of the graph"
+        );
+
+        let tiles = regions(tile_size);
+        let n_threads = rayon::current_num_threads();
+
+        let seen = ConcurrentHashSet::<CompactRegion>::new();
+        let worklist = Worklist::new([WithCost(CompactRegion::empty(), 0)], n_threads, &seen);
+
+        let abort = AtomicBool::new(false);
+
+        thread::scope(|s| {
+            for _ in 0..n_threads {
+                s.spawn(|| {
+                    loop {
+                        let WithCost(compact_region, _) = match worklist.pop() {
+                            Task::Done => return,
+                            Task::Todo(x) => x,
+                        };
+
+                        if abort.load(Ordering::SeqCst) {
+                            return;
+                        }
+
+                        let region = compact_region.to_region(allowed_in_covers);
+
+                        let fully_covered = || g.nodes.iter().all(|n| region.contains(n));
+                        if region.len() >= g.len()
+                            && counterexamples.contains(&region)
+                            && fully_covered()
+                        {
+                            abort.store(true, Ordering::SeqCst);
+                            worklist.done();
+                            return;
+                        }
+
+                        let neighbors = region.neighbors().unwrap_or_else(|| {
+                            Set::from([*g.indices.first_key_value().unwrap().0])
+                        });
+
+                        let mut children = vec![];
+                        for n in neighbors.into_iter().filter(|n| g.contains(n)) {
+                            for t in &tiles {
+                                for n_t in &t.inner {
+                                    let shifted = shift(sub(n, *n_t), t);
+                                    if shifted.iter().all(|n| {
+                                        !region.contains(n) && allowed_in_covers.contains(n)
+                                    }) {
+                                        let combined = &region | &shifted;
+                                        let compact =
+                                            CompactRegion::from(&combined, allowed_in_covers);
+                                        if !seen.contains_sync(&compact) {
+                                            children.push(WithCost(compact, 0));
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        worklist.push_all(children);
+                    }
+                });
+            }
+        });
+
+        if abort.load(Ordering::SeqCst) {
+            return None;
+        }
+
+        let mut result = HashSet::new();
+        seen.iter_sync(|cr: &CompactRegion| {
+            if g.nodes.iter().all(|n| cr.contains(n, allowed_in_covers)) {
+                result.insert(*cr);
+            }
+            true
+        });
+        Some(result)
     }
 
     // Recombine given two colors (the corresponding regions must be adjacent)

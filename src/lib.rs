@@ -213,6 +213,36 @@ impl CompactRegion {
         debug_assert_eq!(self.to_region(universe).contains(n), result);
         result
     }
+
+    /// Number of nodes in this region.
+    #[inline(always)]
+    pub fn len(self) -> usize {
+        self.0.count_ones() as usize
+    }
+
+    /// Whether this region is empty.
+    #[inline(always)]
+    pub fn is_empty(self) -> bool {
+        self.0 == 0
+    }
+
+    /// Union of two compact regions (both must share the same universe).
+    #[inline(always)]
+    pub fn bitor(self, other: Self) -> Self {
+        CompactRegion(self.0 | other.0)
+    }
+
+    /// True if every bit in `other` is also set in `self`.
+    #[inline(always)]
+    pub fn is_superset_of(self, other: Self) -> bool {
+        self.0 & other.0 == other.0
+    }
+
+    /// True if `self` and `other` share no bits (disjoint regions).
+    #[inline(always)]
+    pub fn is_disjoint(self, other: Self) -> bool {
+        self.0 & other.0 == 0
+    }
 }
 
 #[cfg(test)]
@@ -276,6 +306,44 @@ mod test {
         // reflexive
         assert_eq!(empty.cmp(&empty), std::cmp::Ordering::Equal);
         assert_eq!(cr1.cmp(&cr1), std::cmp::Ordering::Equal);
+    }
+
+    #[test]
+    fn compact_region_bitops() {
+        let universe = Graph::triangle(4);
+        let r1 = Region::from(vec![(0, 0), (1, 1)]);
+        let r2 = Region::from(vec![(0, 2), (1, 1)]);
+        let r3 = Region::from(vec![(0, 0), (0, 2), (1, 1)]);
+        let cr1 = CompactRegion::from(&r1, &universe);
+        let cr2 = CompactRegion::from(&r2, &universe);
+        let cr3 = CompactRegion::from(&r3, &universe);
+        let empty = CompactRegion::empty();
+
+        // len
+        assert_eq!(empty.len(), 0);
+        assert_eq!(cr1.len(), 2);
+        assert_eq!(cr3.len(), 3);
+
+        // is_empty
+        assert!(empty.is_empty());
+        assert!(!cr1.is_empty());
+
+        // bitor (union)
+        assert_eq!(cr1.bitor(cr2).to_region(&universe), r3);
+
+        // is_superset_of
+        assert!(cr3.is_superset_of(cr1));
+        assert!(cr3.is_superset_of(cr2));
+        assert!(!cr1.is_superset_of(cr3));
+        assert!(cr1.is_superset_of(empty));
+        assert!(cr1.is_superset_of(cr1));
+
+        // is_disjoint
+        let r_disjoint = Region::from(vec![(0, 2)]);
+        let cr_disjoint = CompactRegion::from(&r_disjoint, &universe);
+        assert!(cr1.is_disjoint(cr_disjoint)); // (0,0),(1,1) vs (0,2)
+        assert!(!cr1.is_disjoint(cr2)); // share (1,1)
+        assert!(cr1.is_disjoint(empty));
     }
 }
 
@@ -758,35 +826,50 @@ impl<'g> Tiling<'g> {
                             return;
                         }
 
-                        let region = compact_region.to_region(allowed_in_covers);
-
-                        let fully_covered = || g.nodes.iter().all(|n| region.contains(n));
-                        if region.len() >= g.len()
-                            && counterexamples.contains(&region)
-                            && fully_covered()
+                        // Counterexample check: only convert to Region when needed (rare path).
+                        if compact_region.len() >= g.len()
+                            && !counterexamples.is_empty()
+                            && g.nodes
+                                .iter()
+                                .all(|n| compact_region.contains(n, allowed_in_covers))
                         {
-                            abort.store(true, Ordering::SeqCst);
-                            worklist.done();
-                            return;
+                            let region = compact_region.to_region(allowed_in_covers);
+                            if counterexamples.contains(&region) {
+                                abort.store(true, Ordering::SeqCst);
+                                worklist.done();
+                                return;
+                            }
                         }
 
-                        let neighbors = region.neighbors().unwrap_or_else(|| {
-                            Set::from([*g.indices.first_key_value().unwrap().0])
-                        });
+                        // Frontier: neighbors of the current region that are in g.
+                        // For the empty region, seed with the first node of g.
+                        let neighbor_nodes: Box<dyn Iterator<Item = Node>> =
+                            if compact_region.is_empty() {
+                                Box::new(std::iter::once(*g.indices.first_key_value().unwrap().0))
+                            } else {
+                                let region = compact_region.to_region(allowed_in_covers);
+                                Box::new(
+                                    region
+                                        .neighbors()
+                                        .unwrap()
+                                        .into_iter()
+                                        .filter(|n| g.contains(n)),
+                                )
+                            };
 
                         let mut children = vec![];
-                        for n in neighbors.into_iter().filter(|n| g.contains(n)) {
+                        for n in neighbor_nodes {
                             for t in &tiles {
                                 for n_t in &t.inner {
                                     let shifted = shift(sub(n, *n_t), t);
-                                    if shifted.iter().all(|n| {
-                                        !region.contains(n) && allowed_in_covers.contains(n)
-                                    }) {
-                                        let combined = &region | &shifted;
-                                        let compact =
-                                            CompactRegion::from(&combined, allowed_in_covers);
-                                        if !seen.contains_sync(&compact) {
-                                            children.push(WithCost(compact, 0));
+                                    if shifted.iter().all(|m| allowed_in_covers.contains(m)) {
+                                        let compact_shifted =
+                                            CompactRegion::from(&shifted, allowed_in_covers);
+                                        if compact_region.is_disjoint(compact_shifted) {
+                                            let combined = compact_region.bitor(compact_shifted);
+                                            if !seen.contains_sync(&combined) {
+                                                children.push(WithCost(combined, 0));
+                                            }
                                         }
                                     }
                                 }
@@ -802,9 +885,10 @@ impl<'g> Tiling<'g> {
             return None;
         }
 
+        let g_compact = CompactRegion::from(&g.clone().into_region(), allowed_in_covers);
         let mut result = HashSet::new();
         seen.iter_sync(|cr: &CompactRegion| {
-            if g.nodes.iter().all(|n| cr.contains(n, allowed_in_covers)) {
+            if cr.is_superset_of(g_compact) {
                 result.insert(*cr);
             }
             true

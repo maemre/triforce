@@ -1,7 +1,5 @@
-use ahash::{HashMap, HashSet};
-use itertools::Itertools;
+use ahash::HashMap;
 use log::info;
-use petgraph::dot::{self, Dot};
 use rustworkx_core::connectivity::connected_components;
 use std::path::PathBuf;
 use triforce::graph::diameter;
@@ -9,7 +7,6 @@ use triforce::metagraph::Metagraph;
 use triforce::viz::mk_hex;
 
 use clap::Parser;
-use std::str::FromStr;
 use triforce::cli::*;
 use triforce::*;
 
@@ -57,7 +54,11 @@ fn main() {
     println!("There are {} edges", metagraph.meta.edge_count());
 
     let cc = connected_components(&metagraph.meta);
-    assert!(cc.len() > 0, "There are {} connected components", cc.len());
+    assert!(
+        !cc.is_empty(),
+        "There are {} connected components",
+        cc.len()
+    );
 
     let ls_path = diameter(&metagraph.meta);
     println!("The diameter is {}", ls_path.len());
@@ -88,6 +89,6 @@ fn main() {
 
     viz::render(
         viz::RenderData { tilings },
-        format!("{}", cli.output.as_path().to_str().unwrap()),
+        cli.output.as_path().to_str().unwrap().to_string(),
     )
 }

@@ -3,12 +3,10 @@
 
 use std::collections::{HashMap, HashSet, VecDeque};
 
-use petgraph::visit::IntoNodeIdentifiers;
-use rayon::iter::{IntoParallelIterator, ParallelBridge, ParallelIterator};
+use rayon::iter::{ParallelBridge, ParallelIterator};
 use rustworkx_core::connectivity::{connected_components, stoer_wagner_min_cut};
 use rustworkx_core::petgraph::graph::{NodeIndex, UnGraph};
 use rustworkx_core::petgraph::visit::EdgeRef;
-use rustworkx_core::shortest_path::single_source_all_shortest_paths;
 
 // Return the longest shortest path starting at given node.
 //
@@ -200,8 +198,7 @@ fn decompose_rec(
     });
 
     // Recurse into both sides
-    let mut side_b = Vec::new();
-    side_b.reserve(nodes.len().saturating_sub(side_a_set.len()));
+    let mut side_b = Vec::with_capacity(nodes.len().saturating_sub(side_a_set.len()));
     for &u in nodes {
         if !side_a_set.contains(&u) {
             side_b.push(u);

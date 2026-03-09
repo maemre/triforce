@@ -152,13 +152,13 @@ fn search_happy_cover<F: Fn(Node) -> isize + Sync + Send>(
                 // check if all covers have a desired metagraph
 
                 let tilings_tried = AtomicUsize::new(0);
-                let first_cex = covers.iter().find_map(|cover| {
+                let first_cex = covers.iter().find(|cover| {
                     // skip the cover if it is already checked and in cache
                     // this is an expensive operation w.r.t. multithreading
                     {
                         // cannot use `contains` because it does not update the LRU cache.
                         if good_cover_cache.lock().unwrap().get(cover).is_some() {
-                            return None;
+                            return false;
                         }
                     }
 
@@ -208,12 +208,12 @@ fn search_happy_cover<F: Fn(Node) -> isize + Sync + Send>(
 
                     if success {
                         // this is a good cover, add it to the cache
-                        good_cover_cache.lock().unwrap().put(*cover, ());
+                        good_cover_cache.lock().unwrap().put(**cover, ());
 
-                        None
+                        false
                     } else {
                         println!("failing cover: {:?}", cover.to_region(allowed_in_covers));
-                        Some(cover)
+                        true
                     }
                 });
 

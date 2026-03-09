@@ -488,8 +488,7 @@ impl<'g> Tiling<'g> {
                     self.color
                         .iter()
                         .enumerate()
-                        .filter(|(_, c_other)| **c_other == Some(c))
-                        .next()
+                        .find(|(_, c_other)| **c_other == Some(c))
                         .unwrap()
                         .0 as u8
                         + 1,

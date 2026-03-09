@@ -1,3 +1,5 @@
+#![allow(clippy::too_many_arguments)]
+
 use std::{thread, time::Duration};
 
 use ahash::{HashMap, HashSet};
@@ -77,11 +79,8 @@ enum LoadingStatus {
 /// The hexagon drawing data
 #[derive(Resource)]
 struct HexData {
-    mesh: Handle<Mesh>,
     // the hexagons to be rendered
     map: HashMap<Hex, Entity>,
-    // the text label to change
-    label: Entity,
 }
 
 pub fn mk_hex(col: i32, row: i32) -> Hex {
@@ -269,7 +268,6 @@ fn create_label(
         ..default()
     };
     let text_justification = Justify::Center;
-    // Demonstrate changing translation
     commands
         .spawn((
             Text2d::new(""),
@@ -278,7 +276,6 @@ fn create_label(
             TextBackgroundColor(Color::BLACK.with_alpha(0.2)),
             TextColor(Color::from(basic::BLUE)),
             Transform::from_translation(pos.extend(0.)),
-            // Text2dShadow::default(),
         ))
         .id()
 }
@@ -384,25 +381,19 @@ fn setup(
     let map = create_all_tiles(&mut commands, &shapes, hex_mesh.clone(), &layout, materials);
     let mut assets_to_load = AssetsToLoad(vec![]);
     warn!("{min_x}, {min_y}");
-    let label = create_label(
+    create_label(
         &mut commands,
         Vec2::new(0., 0.),
         &asset_server,
         &mut assets_to_load,
     );
 
-    commands.insert_resource(HexData {
-        mesh: hex_mesh,
-        map,
-        label,
-    });
+    commands.insert_resource(HexData { map });
     commands.insert_resource(layout);
     commands.insert_resource(assets_to_load);
 
-    for target in [
-        RenderTarget::Image(output_texture_handle.clone().into()),
-        // RenderTarget::Window(bevy::window::WindowRef::Primary),
-    ] {
+    {
+        let target = RenderTarget::Image(output_texture_handle.clone().into());
         commands.spawn((
             Camera2d,
             Camera {

@@ -9,7 +9,7 @@ fn main() {
         .iter()
         .filter(|(_, v)| v.len() > 1)
         .for_each(|(r, _)| println!("{:?}", r));
-    return;
+
     for r in recomb(2).keys() {
         let mut v = r.iter().collect::<Vec<_>>();
         v.sort();

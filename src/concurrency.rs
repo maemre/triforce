@@ -10,16 +10,18 @@ use std::{
 ///
 /// `WithCost` objects are ordered according to their cost, so a <= b iff a.cost
 /// >= b.cost.
-#[derive(PartialEq, Eq, Ord)]
+#[derive(PartialEq, Eq)]
 pub struct WithCost<T>(pub T, pub isize);
+
+impl<T: Eq + Ord> Ord for WithCost<T> {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        (-self.1).cmp(&(-other.1)).then(self.0.cmp(&other.0))
+    }
+}
 
 impl<T: Eq + Ord> PartialOrd for WithCost<T> {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        use std::cmp::Ordering::*;
-        match (-self.1).cmp(&(-other.1)) {
-            Equal => Some(self.0.cmp(&other.0)),
-            o => Some(o),
-        }
+        Some(self.cmp(other))
     }
 }
 
@@ -142,6 +144,10 @@ impl<'a, T: Eq + Ord + std::hash::Hash + Clone> Worklist<'a, T> {
 
     pub fn len(&self) -> usize {
         self.inner.lock().unwrap().heap.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.inner.lock().unwrap().heap.is_empty()
     }
 }
 

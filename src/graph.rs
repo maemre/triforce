@@ -1,20 +1,63 @@
 //! Assorted graph processing utilities.  These work with arbitrary `petgraph`
 //! graphs rather than specifically on metagraphs.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::{HashMap, HashSet, VecDeque};
 
 use petgraph::visit::IntoNodeIdentifiers;
+use rayon::iter::{IntoParallelIterator, ParallelBridge, ParallelIterator};
 use rustworkx_core::connectivity::{connected_components, stoer_wagner_min_cut};
 use rustworkx_core::petgraph::graph::{NodeIndex, UnGraph};
 use rustworkx_core::petgraph::visit::EdgeRef;
 use rustworkx_core::shortest_path::single_source_all_shortest_paths;
 
+// Return the longest shortest path starting at given node.
+//
+// This method uses breadth-first search so g must be unweighted.
+fn longest_shortest_path<N>(
+    g: &UnGraph<N, ()>,
+    start: NodeIndex
+) -> Vec<NodeIndex> {
+    let mut predecessor: Vec<Option<NodeIndex>> = vec![None; g.node_count()];
+    let mut visited = HashSet::<NodeIndex>::new();
+    let mut worklist = VecDeque::from([start]);
+    let mut distance: Vec<Option<u32>> = vec![None; g.node_count()];
+    distance[start.index()] = Some(0);
+
+    while let Some(node) = worklist.pop_front() {
+        if ! visited.insert(node) {
+            continue;
+        }
+
+        let d = distance[node.index()].unwrap();
+        for next in g.neighbors(node) {
+            if let Some(d_old) = distance[next.index()] && d_old < d + 1 {
+                continue;
+            }
+            distance[next.index()] = Some(d + 1);
+            predecessor[next.index()] = Some(node);
+            worklist.push_back(next);
+        }
+    }
+
+    let longest = NodeIndex::new(distance.iter().enumerate().max_by_key(|p| p.1).unwrap().0);
+
+    let mut path = vec![longest];
+    let mut current = longest;
+    while current != start {
+        current = predecessor[current.index()].unwrap();
+        path.push(current);
+    }
+
+    path.reverse();
+    path
+}
+
 /// Calculate a path along the diameter naively
-pub fn diameter<N>(
+pub fn diameter<N: Send + Sync>(
     g: &UnGraph<N, ()>,
 ) -> Vec<NodeIndex> {
-    g.node_indices().map(|start| {
-        single_source_all_shortest_paths(g, start, |_| Ok::<_, ()>(1)).unwrap().into_values().flatten().max_by_key(|v| v.len()).unwrap_or_default()
+    g.node_indices().par_bridge().map(|start| {
+        longest_shortest_path(g, start)
     }).max_by_key(|v| v.len()).unwrap()
 }
 

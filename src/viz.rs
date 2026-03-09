@@ -1,3 +1,5 @@
+use std::{thread, time::Duration};
+
 use ahash::{HashMap, HashSet};
 
 use bevy::{
@@ -6,9 +8,9 @@ use bevy::{
     color::palettes::{basic, css},
     mesh::{Indices, PrimitiveTopology},
     prelude::*,
-    render::render_resource::{
+    render::{render_resource::{
         Extent3d, TextureDescriptor, TextureDimension, TextureFormat, TextureUsages,
-    },
+    }, view::screenshot::Capturing},
     window::WindowPlugin,
 };
 use bevy_image_export::{ImageExport, ImageExportPlugin, ImageExportSettings, ImageExportSource};
@@ -127,6 +129,7 @@ pub fn render(data: RenderData, output_dir: String) {
         .add_plugins(PipelinesReadyPlugin)
         .insert_resource(cfg)
         .insert_resource(data)
+        .insert_resource(InitialWait(true))
         .insert_resource(LoadingStatus::default())
         .add_systems(Startup, setup)
         .add_systems(
@@ -142,11 +145,15 @@ pub fn render(data: RenderData, output_dir: String) {
     export_threads.finish();
 }
 
+#[derive(Resource)]
+struct InitialWait(bool);
+
 fn check_loading_status(
     mut loading: ResMut<LoadingStatus>,
     pipelines_ready: Res<PipelinesReady>,
     asset_server: Res<AssetServer>,
     assets_to_load: Res<AssetsToLoad>,
+    mut wait: ResMut<InitialWait>,
 ) {
     use LoadingStatus::*;
     match *loading {
@@ -166,7 +173,12 @@ fn check_loading_status(
         Countdown(n) => *loading = Countdown(n - 1),
         Loaded => {}
     }
+
     if *loading == LoadingStatus::Loaded {
+        if wait.0 {
+            thread::sleep(Duration::from_millis(20));
+            wait.0 = false;
+        }
         return;
     }
 
@@ -182,8 +194,9 @@ fn render_next_shape(
     hex_data: Res<HexData>,
     mut materials: ResMut<Assets<ColorMaterial>>,
     loading: Res<LoadingStatus>,
+    pipelines_ready: Res<PipelinesReady>,
 ) {
-    if *loading != LoadingStatus::Loaded {
+    if *loading != LoadingStatus::Loaded || ! pipelines_ready.0 {
         return;
     }
 
@@ -193,11 +206,13 @@ fn render_next_shape(
     }
 
     // Spawn each colored tile
-    if let Some((label, tiles)) = data.tilings.pop() {
-        commands.entity(hex_data.label).insert(Text2d(label));
+    if let Some((_label, tiles)) = data.tilings.pop() {
+        // commands.entity(hex_data.label).insert(Text2d(label));
+
+        assert!(!tiles.is_empty());
 
         for (hex, entity) in hex_data.map.iter() {
-            let color = tiles.get(hex).cloned().map_or(BG_COLOR, resolve_color);
+            let color = tiles.get(hex).cloned().map_or(Color::BLACK, resolve_color);
             commands
                 .entity(*entity)
                 .insert(MeshMaterial2d(materials.add(color)));
@@ -349,8 +364,6 @@ fn setup(
             width: view_w,
             height: view_h,
         },
-        near: -1000.0,
-        far: 1000.0,
         ..OrthographicProjection::default_2d()
     };
 
@@ -452,15 +465,19 @@ fn exit_after_all_frames(
     mut cfg: ResMut<RenderConfig>,
     data: Res<RenderData>,
     loading: Res<LoadingStatus>,
+    capturing: Option<Single<&Capturing>>,
 ) {
     if *loading != LoadingStatus::Loaded || !data.tilings.is_empty() {
         return;
     }
 
     if cfg.frames_left_to_render == 0 {
-        exit.write(AppExit::Success);
+        if capturing.is_none() {
+            exit.write(AppExit::Success);
+        }
+    } else {
+        cfg.frames_left_to_render -= 1;
     }
-    cfg.frames_left_to_render -= 1;
 }
 
 // Source: Bevy examples <https://bevy.org/examples/games/loading-screen/>

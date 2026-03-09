@@ -480,6 +480,15 @@ impl<'g> Tiling<'g> {
         self.color[self.graph.get_index(n)?]
     }
 
+    // A stable *non-contiguous* selection of colors for rendering
+    pub fn color_for_rendering(&self, n: &Node) -> Option<Color> {
+        self.color(n).map(|c| {
+            Color(NonZeroU8::new(
+            self.color.iter().enumerate().filter(|(_, c_other)| **c_other == Some(c)).next().unwrap().0 as u8 + 1
+                    ).unwrap())
+        })
+    }
+
     // renumber the colors so that permutations of colors are mapped to the same coloring. we do
     // this by assigning numbers to colors in the order they appear when traversing the graph
     // top-bottom, left-to-right.

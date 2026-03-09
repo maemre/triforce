@@ -483,9 +483,19 @@ impl<'g> Tiling<'g> {
     // A stable *non-contiguous* selection of colors for rendering
     pub fn color_for_rendering(&self, n: &Node) -> Option<Color> {
         self.color(n).map(|c| {
-            Color(NonZeroU8::new(
-            self.color.iter().enumerate().filter(|(_, c_other)| **c_other == Some(c)).next().unwrap().0 as u8 + 1
-                    ).unwrap())
+            Color(
+                NonZeroU8::new(
+                    self.color
+                        .iter()
+                        .enumerate()
+                        .filter(|(_, c_other)| **c_other == Some(c))
+                        .next()
+                        .unwrap()
+                        .0 as u8
+                        + 1,
+                )
+                .unwrap(),
+            )
         })
     }
 

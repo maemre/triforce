@@ -13,10 +13,7 @@ use rustworkx_core::shortest_path::single_source_all_shortest_paths;
 // Return the longest shortest path starting at given node.
 //
 // This method uses breadth-first search so g must be unweighted.
-fn longest_shortest_path<N>(
-    g: &UnGraph<N, ()>,
-    start: NodeIndex
-) -> Vec<NodeIndex> {
+fn longest_shortest_path<N>(g: &UnGraph<N, ()>, start: NodeIndex) -> Vec<NodeIndex> {
     let mut predecessor: Vec<Option<NodeIndex>> = vec![None; g.node_count()];
     let mut visited = HashSet::<NodeIndex>::new();
     let mut worklist = VecDeque::from([start]);
@@ -24,13 +21,15 @@ fn longest_shortest_path<N>(
     distance[start.index()] = Some(0);
 
     while let Some(node) = worklist.pop_front() {
-        if ! visited.insert(node) {
+        if !visited.insert(node) {
             continue;
         }
 
         let d = distance[node.index()].unwrap();
         for next in g.neighbors(node) {
-            if let Some(d_old) = distance[next.index()] && d_old < d + 1 {
+            if let Some(d_old) = distance[next.index()]
+                && d_old < d + 1
+            {
                 continue;
             }
             distance[next.index()] = Some(d + 1);
@@ -53,12 +52,12 @@ fn longest_shortest_path<N>(
 }
 
 /// Calculate a path along the diameter naively
-pub fn diameter<N: Send + Sync>(
-    g: &UnGraph<N, ()>,
-) -> Vec<NodeIndex> {
-    g.node_indices().par_bridge().map(|start| {
-        longest_shortest_path(g, start)
-    }).max_by_key(|v| v.len()).unwrap()
+pub fn diameter<N: Send + Sync>(g: &UnGraph<N, ()>) -> Vec<NodeIndex> {
+    g.node_indices()
+        .par_bridge()
+        .map(|start| longest_shortest_path(g, start))
+        .max_by_key(|v| v.len())
+        .unwrap()
 }
 
 // Bottleneck calculation via edge connectivity
@@ -76,7 +75,11 @@ pub struct Cut {
 fn induced_subgraph(
     g: &UnGraph<(), ()>,
     nodes: &[NodeIndex],
-) -> (UnGraph<(), ()>, Vec<NodeIndex>, HashMap<NodeIndex, NodeIndex>) {
+) -> (
+    UnGraph<(), ()>,
+    Vec<NodeIndex>,
+    HashMap<NodeIndex, NodeIndex>,
+) {
     let mut sub = UnGraph::<(), ()>::new_undirected();
 
     // Map original nodes -> subgraph nodes
@@ -128,11 +131,7 @@ fn cut_edges_in_original(
 ///
 /// - `k_stop`: stop splitting once min-cut >= k_stop.
 /// - `min_size`: stop splitting if subgraph has fewer than `min_size` nodes.
-pub fn bottleneck_decompose(
-    g: &UnGraph<(), ()>,
-    k_stop: usize,
-    min_size: usize,
-) -> Vec<Cut> {
+pub fn bottleneck_decompose(g: &UnGraph<(), ()>, k_stop: usize, min_size: usize) -> Vec<Cut> {
     let all_nodes: Vec<NodeIndex> = g.node_indices().collect();
     let mut out = Vec::new();
     decompose_rec(g, &all_nodes, k_stop, min_size, &mut out);
@@ -185,10 +184,7 @@ fn decompose_rec(
     }
 
     // Convert partition back to original nodes
-    let side_a_vec: Vec<NodeIndex> = part_sub
-        .iter()
-        .map(|&su| sub_to_orig[su.index()])
-        .collect();
+    let side_a_vec: Vec<NodeIndex> = part_sub.iter().map(|&su| sub_to_orig[su.index()]).collect();
 
     let side_a_set: HashSet<NodeIndex> = side_a_vec.iter().copied().collect();
     let active_set: HashSet<NodeIndex> = nodes.iter().copied().collect();

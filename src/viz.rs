@@ -8,9 +8,12 @@ use bevy::{
     color::palettes::{basic, css},
     mesh::{Indices, PrimitiveTopology},
     prelude::*,
-    render::{render_resource::{
-        Extent3d, TextureDescriptor, TextureDimension, TextureFormat, TextureUsages,
-    }, view::screenshot::Capturing},
+    render::{
+        render_resource::{
+            Extent3d, TextureDescriptor, TextureDimension, TextureFormat, TextureUsages,
+        },
+        view::screenshot::Capturing,
+    },
     window::WindowPlugin,
 };
 use bevy_image_export::{ImageExport, ImageExportPlugin, ImageExportSettings, ImageExportSource};
@@ -196,7 +199,7 @@ fn render_next_shape(
     loading: Res<LoadingStatus>,
     pipelines_ready: Res<PipelinesReady>,
 ) {
-    if *loading != LoadingStatus::Loaded || ! pipelines_ready.0 {
+    if *loading != LoadingStatus::Loaded || !pipelines_ready.0 {
         return;
     }
 

@@ -1,5 +1,10 @@
 /target
 *.log
 *.png
-*
-!src/**/*
+*.txt
+*.json
+*.txz
+*.xz
+*.zip
+*.dot
+!scripts/**/*

@@ -81,6 +81,8 @@ enum LoadingStatus {
 struct HexData {
     // the hexagons to be rendered
     map: HashMap<Hex, Entity>,
+    // the label entity
+    label: Entity,
 }
 
 pub fn mk_hex(col: i32, row: i32) -> Hex {
@@ -208,8 +210,8 @@ fn render_next_shape(
     }
 
     // Spawn each colored tile
-    if let Some((_label, tiles)) = data.tilings.pop() {
-        // commands.entity(hex_data.label).insert(Text2d(label));
+    if let Some((label, tiles)) = data.tilings.pop() {
+        commands.entity(hex_data.label).insert(Text2d(label));
 
         assert!(!tiles.is_empty());
 
@@ -381,14 +383,14 @@ fn setup(
     let map = create_all_tiles(&mut commands, &shapes, hex_mesh.clone(), &layout, materials);
     let mut assets_to_load = AssetsToLoad(vec![]);
     warn!("{min_x}, {min_y}");
-    create_label(
+    let label = create_label(
         &mut commands,
-        Vec2::new(0., 0.),
+        Vec2::new(cfg.image_width as f32 * 2.0 - 100.0, 0.0),
         &asset_server,
         &mut assets_to_load,
     );
 
-    commands.insert_resource(HexData { map });
+    commands.insert_resource(HexData { map, label });
     commands.insert_resource(layout);
     commands.insert_resource(assets_to_load);
 

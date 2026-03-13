@@ -4468,9 +4468,9 @@ checksum = "28d3b2b1366ec20994f1fd18c3c594f05c5dd4bc44d8bb0c1c632c8d6829481f"
 
 [[package]]
 name = "saa"
-version = "5.2.0"
+version = "5.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "72344f6e377b9a2f08843cbbc803422547d7af9f7a00e3d4f57db7ca164ce67e"
+checksum = "16c7f49c9d5caa3bf4b3106900484b447b9253fe99670ceb81cb6cb5027855e1"
 
 [[package]]
 name = "same-file"
@@ -4483,9 +4483,9 @@ dependencies = [
 
 [[package]]
 name = "scc"
-version = "3.3.3"
+version = "3.6.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "dd37c88f5f67ce08ba7773895d0be51a6772af8a7e2de41e6af63c182d2fd736"
+checksum = "45bb5ce9efd4a6e7b0f86c2697fe4c1d78d1f4e6d988c54b752d577cafe22fe8"
 dependencies = [
  "saa",
  "sdd",
@@ -4518,9 +4518,9 @@ dependencies = [
 
 [[package]]
 name = "sdd"
-version = "4.2.4"
+version = "4.7.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8a8729f5224c38cb041e72fa9968dd4e379d3487b85359539d31d75ed95992d8"
+checksum = "b21a75f5913ab130e4b369fb8693be25f29b983e2ecad4279df9bfa5dd8aaf3e"
 
 [[package]]
 name = "self_cell"

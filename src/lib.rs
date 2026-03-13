@@ -29,6 +29,7 @@ use std::{
     collections::{BTreeMap, BTreeSet as Set},
     num::NonZeroU8,
     ops::{BitOr, Index},
+    sync::Arc,
 };
 
 use serde::{Deserialize, Serialize};
@@ -37,6 +38,7 @@ pub mod cli;
 pub mod concurrency;
 mod fmt;
 pub mod graph;
+pub mod iter;
 mod macros;
 pub mod metagraph;
 pub mod viz;
@@ -228,6 +230,7 @@ impl CompactRegion {
 
     /// Union of two compact regions (both must share the same universe).
     #[inline(always)]
+    #[allow(clippy::should_implement_trait)]
     pub fn bitor(self, other: Self) -> Self {
         CompactRegion(self.0 | other.0)
     }
@@ -808,8 +811,63 @@ impl<'g> Tiling<'g> {
         let tiles = regions(tile_size);
         let n_threads = rayon::current_num_threads();
 
-        let seen = ConcurrentHashSet::<CompactRegion>::new();
-        let worklist = Worklist::new([WithCost(CompactRegion::empty(), 0)], n_threads, &seen);
+        // Opt 2: Precompute per-node neighbor bitmasks in allowed_in_covers.
+        let n_nodes = allowed_in_covers.len();
+        let mut neighbor_masks = vec![0u128; n_nodes];
+        for (i, node) in allowed_in_covers.nodes.iter().enumerate() {
+            for nbr in neighbors(node) {
+                if let Some(&j) = allowed_in_covers.indices.get(&nbr) {
+                    neighbor_masks[i] |= 1u128 << j;
+                }
+            }
+        }
+        // Bitmask of g's nodes within allowed_in_covers.
+        let g_mask: u128 = g
+            .nodes
+            .iter()
+            .map(|n| 1u128 << allowed_in_covers.indices[n])
+            .fold(0, |a, b| a | b);
+        // Seed bit: first node of g in allowed_in_covers.
+        let g_seed_bit: u128 =
+            1u128 << allowed_in_covers.indices[g.indices.first_key_value().unwrap().0];
+
+        // Opt 3: For each node in g (by g index), precompute compact tile placement masks
+        // that cover that node and fit entirely within allowed_in_covers.
+        let tiles_for_g_node: Vec<Vec<u128>> = g
+            .nodes
+            .iter()
+            .map(|n| {
+                let mut masks = vec![];
+                for t in &tiles {
+                    for n_t in &t.inner {
+                        let shifted = shift(sub(*n, *n_t), t);
+                        if shifted.iter().all(|m| allowed_in_covers.contains(m)) {
+                            let mask = shifted
+                                .iter()
+                                .map(|m| 1u128 << allowed_in_covers.indices[m])
+                                .fold(0u128, |a, b| a | b);
+                            masks.push(mask);
+                        }
+                    }
+                }
+                masks.sort_unstable();
+                masks.dedup();
+                masks
+            })
+            .collect();
+
+        // Map from allowed_in_covers bit-index to g.nodes index (usize::MAX if not in g).
+        let mut allowed_idx_to_g_idx = vec![usize::MAX; n_nodes];
+        for (gi, n) in g.nodes.iter().enumerate() {
+            allowed_idx_to_g_idx[allowed_in_covers.indices[n]] = gi;
+        }
+
+        let seen = Arc::new(ConcurrentHashSet::<CompactRegion>::new());
+        let worklist = Worklist::new(
+            [WithCost(CompactRegion::empty(), 0)],
+            n_threads,
+            seen.clone(),
+        );
 
         let abort = AtomicBool::new(false);
 
@@ -829,9 +887,7 @@ impl<'g> Tiling<'g> {
                         // Counterexample check: only convert to Region when needed (rare path).
                         if compact_region.len() >= g.len()
                             && !counterexamples.is_empty()
-                            && g.nodes
-                                .iter()
-                                .all(|n| compact_region.contains(n, allowed_in_covers))
+                            && compact_region.0 & g_mask == g_mask
                         {
                             let region = compact_region.to_region(allowed_in_covers);
                             if counterexamples.contains(&region) {
@@ -841,36 +897,33 @@ impl<'g> Tiling<'g> {
                             }
                         }
 
-                        // Frontier: neighbors of the current region that are in g.
-                        // For the empty region, seed with the first node of g.
-                        let neighbor_nodes: Box<dyn Iterator<Item = Node>> =
-                            if compact_region.is_empty() {
-                                Box::new(std::iter::once(*g.indices.first_key_value().unwrap().0))
-                            } else {
-                                let region = compact_region.to_region(allowed_in_covers);
-                                Box::new(
-                                    region
-                                        .neighbors()
-                                        .unwrap()
-                                        .into_iter()
-                                        .filter(|n| g.contains(n)),
-                                )
-                            };
+                        // Opt 2: Compute frontier as a bitmask — neighbors of the current
+                        // region that are in g but not yet in the region.
+                        let frontier_mask: u128 = if compact_region.is_empty() {
+                            g_seed_bit
+                        } else {
+                            let mut m = 0u128;
+                            let mut bits = compact_region.0;
+                            while bits != 0 {
+                                let i = bits.trailing_zeros() as usize;
+                                m |= neighbor_masks[i];
+                                bits &= bits - 1;
+                            }
+                            m & g_mask & !compact_region.0
+                        };
 
+                        // Opt 3: Iterate frontier bits and look up precomputed tile masks.
                         let mut children = vec![];
-                        for n in neighbor_nodes {
-                            for t in &tiles {
-                                for n_t in &t.inner {
-                                    let shifted = shift(sub(n, *n_t), t);
-                                    if shifted.iter().all(|m| allowed_in_covers.contains(m)) {
-                                        let compact_shifted =
-                                            CompactRegion::from(&shifted, allowed_in_covers);
-                                        if compact_region.is_disjoint(compact_shifted) {
-                                            let combined = compact_region.bitor(compact_shifted);
-                                            if !seen.contains_sync(&combined) {
-                                                children.push(WithCost(combined, 0));
-                                            }
-                                        }
+                        let mut frontier = frontier_mask;
+                        while frontier != 0 {
+                            let ai = frontier.trailing_zeros() as usize;
+                            frontier &= frontier - 1;
+                            let gi = allowed_idx_to_g_idx[ai];
+                            for &tile_mask in &tiles_for_g_node[gi] {
+                                if compact_region.0 & tile_mask == 0 {
+                                    let combined = CompactRegion(compact_region.0 | tile_mask);
+                                    if !seen.contains_sync(&combined) {
+                                        children.push(WithCost(combined, 0));
                                     }
                                 }
                             }

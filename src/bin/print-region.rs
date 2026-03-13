@@ -1,7 +1,6 @@
 use clap::Parser;
-use std::path::PathBuf;
 use triforce::cli::*;
-use triforce::{viz::*, *};
+use triforce::*;
 
 /// Visualize the given region
 #[derive(Parser, Debug)]

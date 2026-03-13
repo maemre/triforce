@@ -3,7 +3,7 @@
 use scc::HashSet as ConcurrentHashSet;
 use std::{
     collections::BinaryHeap,
-    sync::{Condvar, Mutex},
+    sync::{Arc, Condvar, Mutex},
 };
 
 /// A piece of data with associated cost.
@@ -38,20 +38,20 @@ struct Inner<T> {
 }
 
 /// Abstracted worklist to allow different search strategies/worklist structures
-pub struct Worklist<'a, T> {
+pub struct Worklist<T> {
     inner: Mutex<Inner<T>>,
     // Set of values that are already processed, we have it here so that we can
     // avoid locking the worklist repeatedly for this check
-    seen: &'a ConcurrentHashSet<T>,
+    seen: Arc<ConcurrentHashSet<T>>,
     cv: Condvar,
 }
 
-impl<'a, T: Eq + Ord + std::hash::Hash + Clone> Worklist<'a, T> {
+impl<T: Eq + Ord + std::hash::Hash + Clone> Worklist<T> {
     pub fn new<const N: usize>(
         xs: [WithCost<T>; N],
         workers: usize,
-        seen: &'a ConcurrentHashSet<T>,
-    ) -> Worklist<'a, T> {
+        seen: Arc<ConcurrentHashSet<T>>,
+    ) -> Worklist<T> {
         let heap = BinaryHeap::from(xs);
         Worklist {
             inner: Mutex::new(Inner {

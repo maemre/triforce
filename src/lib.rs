@@ -250,6 +250,8 @@ impl CompactRegion {
 
 #[cfg(test)]
 mod test {
+    use std::collections::HashSet;
+
     use super::*;
 
     #[test]
@@ -261,9 +263,8 @@ mod test {
 
     /// Check that par_min_covers returns the same set as min_covers for the given graph/extension.
     fn assert_par_min_covers_eq(g: &Graph, allowed: &Graph, tile_size: usize) {
-        let counterexamples = HashSet::default();
-        let seq = Tiling::min_covers(g, allowed, tile_size, &counterexamples);
-        let par = Tiling::par_min_covers(g, allowed, tile_size, &counterexamples);
+        let seq = Tiling::min_covers(g, allowed, tile_size, &HashSet::default());
+        let par = Tiling::par_min_covers(g, allowed, tile_size);
         assert_eq!(
             seq.is_none(),
             par.is_none(),
@@ -794,7 +795,6 @@ impl<'g> Tiling<'g> {
         g: &'g Graph,
         allowed_in_covers: &'g Graph,
         tile_size: usize,
-        counterexamples: &HashSet<Region>,
     ) -> Option<HashSet<CompactRegion>> {
         use crate::concurrency::{Task, WithCost, Worklist};
         use scc::HashSet as ConcurrentHashSet;
@@ -882,19 +882,6 @@ impl<'g> Tiling<'g> {
 
                         if abort.load(Ordering::SeqCst) {
                             return;
-                        }
-
-                        // Counterexample check: only convert to Region when needed (rare path).
-                        if compact_region.len() >= g.len()
-                            && !counterexamples.is_empty()
-                            && compact_region.0 & g_mask == g_mask
-                        {
-                            let region = compact_region.to_region(allowed_in_covers);
-                            if counterexamples.contains(&region) {
-                                abort.store(true, Ordering::SeqCst);
-                                worklist.done();
-                                return;
-                            }
                         }
 
                         // Opt 2: Compute frontier as a bitmask — neighbors of the current

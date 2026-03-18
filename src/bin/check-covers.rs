@@ -82,7 +82,7 @@ fn check_happy_cover(
     timer.record_elapsed("partial_tile_set");
     timer.restart();
 
-    let covers = Tiling::par_min_covers(base, allowed_in_covers, tile_size, &HashSet::default());
+    let covers = Tiling::par_min_covers(base, allowed_in_covers, tile_size);
 
     timer.record_elapsed("min_covers");
 

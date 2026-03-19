@@ -29,7 +29,6 @@ use std::{
     collections::{BTreeMap, BTreeSet as Set},
     num::NonZeroU8,
     ops::{BitOr, Index},
-    sync::Arc,
 };
 
 use serde::{Deserialize, Serialize};
@@ -38,7 +37,7 @@ pub mod cli;
 pub mod concurrency;
 mod fmt;
 pub mod graph;
-pub mod iter;
+// pub mod iter;
 mod macros;
 pub mod metagraph;
 pub mod viz;
@@ -797,7 +796,6 @@ impl<'g> Tiling<'g> {
         tile_size: usize,
     ) -> Option<HashSet<CompactRegion>> {
         use crate::concurrency::{Task, WithCost, Worklist};
-        use scc::HashSet as ConcurrentHashSet;
         use std::sync::atomic::{AtomicBool, Ordering};
         use std::thread;
 
@@ -862,11 +860,10 @@ impl<'g> Tiling<'g> {
             allowed_idx_to_g_idx[allowed_in_covers.indices[n]] = gi;
         }
 
-        let seen = Arc::new(ConcurrentHashSet::<CompactRegion>::new());
         let worklist = Worklist::new(
             [WithCost(CompactRegion::empty(), 0)],
             n_threads,
-            seen.clone(),
+            allowed_in_covers.len(),
         );
 
         let abort = AtomicBool::new(false);
@@ -909,8 +906,9 @@ impl<'g> Tiling<'g> {
                             for &tile_mask in &tiles_for_g_node[gi] {
                                 if compact_region.0 & tile_mask == 0 {
                                     let combined = CompactRegion(compact_region.0 | tile_mask);
-                                    if !seen.contains_sync(&combined) {
-                                        children.push(WithCost(combined, 0));
+                                    let combined_size = combined.len();
+                                    if !worklist.seen[combined_size].contains_sync(&combined) {
+                                        children.push(WithCost(combined, combined_size as isize));
                                     }
                                 }
                             }
@@ -927,12 +925,14 @@ impl<'g> Tiling<'g> {
 
         let g_compact = CompactRegion::from(&g.clone().into_region(), allowed_in_covers);
         let mut result = HashSet::new();
-        seen.iter_sync(|cr: &CompactRegion| {
-            if cr.is_superset_of(g_compact) {
-                result.insert(*cr);
-            }
-            true
-        });
+        for set in &worklist.seen {
+            set.iter_sync(|cr: &CompactRegion| {
+                if cr.is_superset_of(g_compact) {
+                    result.insert(*cr);
+                }
+                true
+            });
+        }
         Some(result)
     }
 

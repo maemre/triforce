@@ -1,11 +1,10 @@
 use ahash::{HashMap, HashMapExt, HashSet, HashSetExt};
 use lru::LruCache;
-use scc::HashSet as ConcurrentHashSet;
 use std::collections::BTreeMap;
 use std::num::NonZero;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::{Arc, Mutex, RwLock};
+use std::sync::{Mutex, RwLock};
 use std::thread;
 use triforce::concurrency::*;
 
@@ -80,8 +79,8 @@ fn search_happy_cover<F: Fn(Node) -> isize + Sync + Send>(
     let counterexamples = RwLock::new(HashSet::<Region>::new());
 
     let n_threads = rayon::current_num_threads();
-    let regions_tried = Arc::new(ConcurrentHashSet::new());
-    let worklist = Worklist::new([WithCost(base, 0)], n_threads, regions_tried.clone());
+    let max_cost: usize = extensions.nodes().iter().map(|n| cost(*n).max(0) as usize).sum();
+    let worklist = Worklist::new([WithCost(base, 0)], n_threads, max_cost);
 
     // The cache of good covers, to skip re-tiling the same cover
     let good_cover_cache = Mutex::new(LruCache::<CompactRegion, ()>::new(
@@ -242,7 +241,7 @@ fn search_happy_cover<F: Fn(Node) -> isize + Sync + Send>(
                     new.insert(n);
                     let new = Graph::from(new);
                     let cost = curr_cost + cost(n);
-                    if !regions_tried.contains_sync(&new) {
+                    if !worklist.seen[cost as usize].contains_sync(&new) {
                         new_graphs.push(WithCost(new, cost));
                     }
                 }

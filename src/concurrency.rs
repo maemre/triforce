@@ -3,7 +3,7 @@
 use scc::HashSet as ConcurrentHashSet;
 use std::{
     collections::BinaryHeap,
-    sync::{Arc, Condvar, Mutex},
+    sync::{Condvar, Mutex},
 };
 
 /// A piece of data with associated cost.
@@ -40,9 +40,9 @@ struct Inner<T> {
 /// Abstracted worklist to allow different search strategies/worklist structures
 pub struct Worklist<T> {
     inner: Mutex<Inner<T>>,
-    // Set of values that are already processed, we have it here so that we can
-    // avoid locking the worklist repeatedly for this check
-    seen: Arc<ConcurrentHashSet<T>>,
+    // Sets of values that are already processed, indexed by cost (cost as usize).
+    // We have it here so that we can avoid locking the worklist repeatedly for this check.
+    pub seen: Vec<ConcurrentHashSet<T>>,
     cv: Condvar,
 }
 
@@ -50,9 +50,10 @@ impl<T: Eq + Ord + std::hash::Hash + Clone> Worklist<T> {
     pub fn new<const N: usize>(
         xs: [WithCost<T>; N],
         workers: usize,
-        seen: Arc<ConcurrentHashSet<T>>,
+        max_cost: usize,
     ) -> Worklist<T> {
         let heap = BinaryHeap::from(xs);
+        let seen = (0..=max_cost).map(|_| ConcurrentHashSet::new()).collect();
         Worklist {
             inner: Mutex::new(Inner {
                 heap,
@@ -108,7 +109,8 @@ impl<T: Eq + Ord + std::hash::Hash + Clone> Worklist<T> {
                 inner.heap.len()
             );
             if let Some(task) = inner.heap.pop() {
-                if self.seen.insert_sync(task.0.clone()).is_ok() {
+                let cost_idx = task.1 as usize;
+                if self.seen[cost_idx].insert_sync(task.0.clone()).is_ok() {
                     log::debug!("  dispatching a task");
                     return Task::Todo(task);
                 }

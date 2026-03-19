@@ -29,6 +29,7 @@ use std::{
     collections::{BTreeMap, BTreeSet as Set},
     num::NonZeroU8,
     ops::{BitOr, Index},
+    sync::atomic::AtomicUsize,
 };
 
 use serde::{Deserialize, Serialize};
@@ -796,7 +797,7 @@ impl<'g> Tiling<'g> {
         tile_size: usize,
     ) -> Option<HashSet<CompactRegion>> {
         use crate::concurrency::{Task, WithCost, Worklist};
-        use std::sync::atomic::{AtomicBool, Ordering};
+        use std::sync::atomic::Ordering;
         use std::thread;
 
         assert!(!g.nodes.is_empty());
@@ -860,13 +861,16 @@ impl<'g> Tiling<'g> {
             allowed_idx_to_g_idx[allowed_in_covers.indices[n]] = gi;
         }
 
+        let g_compact = CompactRegion::from(&g.clone().into_region(), allowed_in_covers);
+
         let worklist = Worklist::new(
             [WithCost(CompactRegion::empty(), 0)],
             n_threads,
             allowed_in_covers.len(),
+            true,
         );
-
-        let abort = AtomicBool::new(false);
+        let last_cleanup = AtomicUsize::new(0);
+        let processed = AtomicUsize::new(0);
 
         thread::scope(|s| {
             for _ in 0..n_threads {
@@ -877,12 +881,23 @@ impl<'g> Tiling<'g> {
                             Task::Todo(x) => x,
                         };
 
-                        if abort.load(Ordering::SeqCst) {
-                            return;
+                        let size = compact_region.len();
+
+                        if size > last_cleanup.fetch_max(size, Ordering::SeqCst) {
+                            log::info!("cleaning up regions up to size {size}");
+                            worklist.retain_up_to_max_cost(size, |cr| cr.len() >= g_compact.len() && cr.is_superset_of(g_compact));
                         }
 
-                        // Opt 2: Compute frontier as a bitmask — neighbors of the current
-                        // region that are in g but not yet in the region.
+                        let processed = processed.fetch_add(1, Ordering::SeqCst);
+                        if processed.is_multiple_of(1_000_000) {
+                            let seen_sizes = worklist.seen.iter().map(|s| s.len()).enumerate().collect::<BTreeMap<_, _>>();
+                            log::info!("processed {processed} items off the queue, retained seen set sizes: {seen_sizes:?}");
+                        }
+
+                        // Compute the frontier as a bitmask.
+                        //
+                        // frontier = neighbors of the current region that are
+                        // in g but not yet in the region.
                         let frontier_mask: u128 = if compact_region.is_empty() {
                             g_seed_bit
                         } else {
@@ -896,7 +911,7 @@ impl<'g> Tiling<'g> {
                             m & g_mask & !compact_region.0
                         };
 
-                        // Opt 3: Iterate frontier bits and look up precomputed tile masks.
+                        // Iterate frontier bits and look up precomputed tile masks.
                         let mut children = vec![];
                         let mut frontier = frontier_mask;
                         while frontier != 0 {
@@ -919,11 +934,6 @@ impl<'g> Tiling<'g> {
             }
         });
 
-        if abort.load(Ordering::SeqCst) {
-            return None;
-        }
-
-        let g_compact = CompactRegion::from(&g.clone().into_region(), allowed_in_covers);
         let mut result = HashSet::new();
         for set in &worklist.seen {
             set.iter_sync(|cr: &CompactRegion| {

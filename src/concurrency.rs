@@ -44,6 +44,15 @@ pub struct Worklist<T> {
     // We have it here so that we can avoid locking the worklist repeatedly for this check.
     pub seen: Vec<ConcurrentHashSet<T>>,
     cv: Condvar,
+    /// If true, callers promise never to push cost < N after calling
+    /// retain_for_max_cost(N, ...). Enables last_cleaned advancement.
+    is_extensive: bool,
+    /// How far we've cleaned seen sets (exclusive upper bound on cost index).
+    /// Only meaningful when Worklist::is_extensive is true.
+    ///
+    /// This is behind a mutex so that retain_for_max_cost can be treated as a
+    /// critical region.
+    last_cleaned: Mutex<usize>,
 }
 
 impl<T: Eq + Ord + std::hash::Hash + Clone> Worklist<T> {
@@ -51,6 +60,7 @@ impl<T: Eq + Ord + std::hash::Hash + Clone> Worklist<T> {
         xs: [WithCost<T>; N],
         workers: usize,
         max_cost: usize,
+        is_extensive: bool,
     ) -> Worklist<T> {
         let heap = BinaryHeap::from(xs);
         let seen = (0..=max_cost).map(|_| ConcurrentHashSet::new()).collect();
@@ -63,7 +73,27 @@ impl<T: Eq + Ord + std::hash::Hash + Clone> Worklist<T> {
             }),
             cv: Condvar::new(),
             seen,
+            is_extensive,
+            last_cleaned: Mutex::new(0),
         }
+    }
+
+    /// Remove entries from `seen[last_clened..cost]` that do not satisfy
+    /// `predicate`.
+    ///
+    /// Does nothing if `is_extensive` is false.
+    pub fn retain_up_to_max_cost<F>(&self, max_cost: usize, predicate: F)
+    where
+        F: Fn(&T) -> bool,
+    {
+        if !self.is_extensive {
+            return;
+        }
+        let mut last_cleaned = self.last_cleaned.lock().unwrap();
+        for s in *last_cleaned..max_cost {
+            self.seen[s].retain_sync(|item| predicate(item));
+        }
+        *last_cleaned = last_cleaned.max(max_cost);
     }
 
     pub fn push(&self, g: WithCost<T>) {

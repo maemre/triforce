@@ -79,8 +79,12 @@ fn search_happy_cover<F: Fn(Node) -> isize + Sync + Send>(
     let counterexamples = RwLock::new(HashSet::<Region>::new());
 
     let n_threads = rayon::current_num_threads();
-    let max_cost: usize = extensions.nodes().iter().map(|n| cost(*n).max(0) as usize).sum();
-    let worklist = Worklist::new([WithCost(base, 0)], n_threads, max_cost);
+    let max_cost: usize = extensions
+        .nodes()
+        .iter()
+        .map(|n| cost(*n).max(0) as usize)
+        .sum();
+    let worklist = Worklist::new([WithCost(base, 0)], n_threads, max_cost, false);
 
     // The cache of good covers, to skip re-tiling the same cover
     let good_cover_cache = Mutex::new(LruCache::<CompactRegion, ()>::new(

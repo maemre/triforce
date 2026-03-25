@@ -41,6 +41,8 @@ pub mod graph;
 // pub mod iter;
 mod macros;
 pub mod metagraph;
+
+#[cfg(feature = "rendering")]
 pub mod viz;
 
 #[allow(unused_imports)]

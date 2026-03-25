@@ -78,7 +78,7 @@ impl<T: Eq + Ord + std::hash::Hash + Clone> Worklist<T> {
         }
     }
 
-    /// Remove entries from `seen[last_clened..cost]` that do not satisfy
+    /// Remove entries from `seen[last_cleaned..cost]` that do not satisfy
     /// `predicate`.
     ///
     /// Does nothing if `is_extensive` is false.

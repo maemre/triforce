@@ -890,7 +890,7 @@ impl<'g> Tiling<'g> {
 
                         let processed = processed.fetch_add(1, Ordering::SeqCst);
                         if processed.is_multiple_of(1_000_000) {
-                            let seen_sizes = worklist.seen.iter().map(|s| s.len()).enumerate().collect::<BTreeMap<_, _>>();
+                            let seen_sizes = worklist.seen.iter().map(|s| (s.len(), s.capacity())).enumerate().collect::<BTreeMap<_, _>>();
                             log::info!("processed {processed} items off the queue, retained seen set sizes: {seen_sizes:?}");
                         }
 

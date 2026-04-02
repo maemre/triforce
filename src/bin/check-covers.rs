@@ -1,7 +1,9 @@
 use ahash::{HashMap, HashMapExt, HashSet, HashSetExt};
+use rayon::iter::{ParallelBridge, ParallelIterator};
 use std::collections::BTreeMap;
 use std::path::PathBuf;
-use std::time::{Duration, Instant};
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::time::Instant;
 
 use clap::Parser;
 use triforce::cli::*;
@@ -19,7 +21,7 @@ impl Timer {
     }
 
     fn record_elapsed(&self, msg: &str) {
-        println!(
+        log::info!(
             "TIMER {}: {:.3}ms",
             msg,
             self.start.elapsed().as_secs_f64() * 1000.0
@@ -82,102 +84,78 @@ fn check_happy_cover(
     timer.record_elapsed("partial_tile_set");
     timer.restart();
 
-    let covers = Tiling::par_min_covers(base, allowed_in_covers, tile_size);
+    let potential_covers = Tiling::potential_covers(base, allowed_in_covers, tile_size);
 
-    timer.record_elapsed("min_covers");
-
-    let Some(covers) = covers else {
-        return false;
-    };
+    timer.record_elapsed("potential_covers");
 
     println!("graph: {:?}", base.nodes());
-    println!("#covers: {}", covers.len());
-    assert_ne!(covers.len(), 0);
+    println!("#potential covers: {}", potential_covers.len());
+    assert_ne!(potential_covers.len(), 0);
 
-    let mut tilings_tried = 0usize;
+    let tilings_tried = AtomicUsize::new(0);
 
-    // Accumulators for per-cover sub-step timings
-    let mut t_to_region = Duration::ZERO;
-    let mut t_enumerate = Duration::ZERO;
-    let mut t_filter = Duration::ZERO;
-    let mut t_reachable = Duration::ZERO;
+    timer.restart();
 
-    let covers_loop_start = Instant::now();
-    let all_pass = covers.iter().all(|cover| {
-        timer.restart();
-        let region = cover.to_region(allowed_in_covers);
-        let g = Graph::from(region);
-        t_to_region += timer.start.elapsed();
+    let all_pass = potential_covers
+        .iter()
+        .enumerate()
+        .par_bridge()
+        .all(|(i, cover)| {
+            let region = cover.to_region(allowed_in_covers);
+            let g = Graph::from(region);
+            let tilings = Tiling::enumerate(&g, tile_size);
+            let complete = tilings
+                .iter()
+                .filter(|g| g.is_complete())
+                .collect::<Vec<_>>();
 
-        timer.restart();
-        let tilings = Tiling::enumerate(&g, tile_size);
-        t_enumerate += timer.start.elapsed();
+            // if the metagraph is empty, continue but log
+            if complete.is_empty() {
+                log::warn!("The metagraph for {g:?} is empty!");
+                return true;
+            }
 
-        timer.restart();
-        let complete = tilings
-            .iter()
-            .filter(|g| g.is_complete())
-            .collect::<Vec<_>>();
-        t_filter += timer.start.elapsed();
+            tilings_tried.fetch_add(complete.len(), Ordering::SeqCst);
 
-        tilings_tried += complete.len();
+            if i % 100 == 0 {
+                log::info!("Checked approximately {i} covers.");
+            }
 
-        timer.restart();
-        let mut seen = HashSet::<Tiling>::new();
+            let mut seen = HashSet::<Tiling>::new();
 
-        let mut success = false;
-        for tiling in &complete {
+            let mut success = false;
+            for tiling in &complete {
+                if seen.len() == complete.len() {
+                    success = true;
+                    break;
+                }
+
+                if seen.contains(tiling) {
+                    continue;
+                }
+
+                if partial_tile_set.iter().all(|tile| {
+                    let color = tiling.color(&tile[0]);
+                    tile.iter().all(|n| tiling.color(n) == color)
+                }) {
+                    seen.extend(tiling.reachable(tile_size));
+                }
+            }
+
             if seen.len() == complete.len() {
                 success = true;
-                break;
             }
 
-            if seen.contains(tiling) {
-                continue;
+            if !success {
+                println!("failing cover: {:?}", cover.to_region(allowed_in_covers));
             }
 
-            if partial_tile_set.iter().all(|tile| {
-                let color = tiling.color(&tile[0]);
-                tile.iter().all(|n| tiling.color(n) == color)
-            }) {
-                seen.extend(tiling.reachable(tile_size));
-            }
-        }
+            success
+        });
 
-        if seen.len() == complete.len() {
-            success = true;
-        }
-        t_reachable += timer.start.elapsed();
+    timer.record_elapsed("metagraph_check");
 
-        if !success {
-            println!("failing cover: {:?}", cover.to_region(allowed_in_covers));
-        }
-
-        success
-    });
-
-    println!("# tilings tried: {tilings_tried}");
-
-    println!(
-        "TIMER covers_loop/total: {:.3}ms",
-        covers_loop_start.elapsed().as_secs_f64() * 1000.0
-    );
-    println!(
-        "TIMER covers_loop/to_region+graph: {:.3}ms",
-        t_to_region.as_secs_f64() * 1000.0
-    );
-    println!(
-        "TIMER covers_loop/enumerate: {:.3}ms",
-        t_enumerate.as_secs_f64() * 1000.0
-    );
-    println!(
-        "TIMER covers_loop/filter_complete: {:.3}ms",
-        t_filter.as_secs_f64() * 1000.0
-    );
-    println!(
-        "TIMER covers_loop/reachable: {:.3}ms",
-        t_reachable.as_secs_f64() * 1000.0
-    );
+    println!("# tilings tried: {}", tilings_tried.load(Ordering::SeqCst));
 
     all_pass
 }

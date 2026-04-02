@@ -24,6 +24,7 @@
 //! start at the origin in many data structures below.
 
 use ahash::{HashMap, HashMapExt, HashSet, HashSetExt};
+use itertools::Itertools;
 use rayon::iter::*;
 use std::{
     collections::{BTreeMap, BTreeSet as Set},
@@ -230,13 +231,6 @@ impl CompactRegion {
         self.0 == 0
     }
 
-    /// Union of two compact regions (both must share the same universe).
-    #[inline(always)]
-    #[allow(clippy::should_implement_trait)]
-    pub fn bitor(self, other: Self) -> Self {
-        CompactRegion(self.0 | other.0)
-    }
-
     /// True if every bit in `other` is also set in `self`.
     #[inline(always)]
     pub fn is_superset_of(self, other: Self) -> bool {
@@ -247,6 +241,14 @@ impl CompactRegion {
     #[inline(always)]
     pub fn is_disjoint(self, other: Self) -> bool {
         self.0 & other.0 == 0
+    }
+}
+
+impl BitOr for CompactRegion {
+    type Output = CompactRegion;
+
+    fn bitor(self, rhs: Self) -> Self::Output {
+        CompactRegion(self.0 | rhs.0)
     }
 }
 
@@ -946,6 +948,41 @@ impl<'g> Tiling<'g> {
             });
         }
         Some(result)
+    }
+
+    /// Potential covers of a given region:
+    ///
+    /// Calculates regions R such that
+    ///
+    /// 1. g ⊆ R ⊆ allowed_in_covers
+    /// 2. tile_size | R.len()
+    ///
+    /// The returned compact regions are relative to `allowed_in_covers`.
+    pub fn potential_covers(
+        g: &'g Graph,
+        allowed_in_covers: &'g Graph,
+        tile_size: usize,
+    ) -> HashSet<CompactRegion> {
+        let must_contain = g.nodes().iter().collect::<HashSet<_>>();
+        let may_contain = allowed_in_covers.nodes().iter().collect::<HashSet<_>>();
+        let base = CompactRegion::from(&g.clone().into_region(), allowed_in_covers);
+
+        assert!(
+            must_contain.is_subset(&may_contain),
+            "g must be a subset of allowed_in_covers"
+        );
+
+        // TODO: also filter by connectivity when we investigate larger tile sizes.
+        may_contain
+            .difference(&must_contain)
+            .powerset()
+            .filter(|new_nodes| (new_nodes.len() + must_contain.len()) % tile_size == 0)
+            .map(|new_nodes| {
+                let region = Region::from(new_nodes.into_iter().copied().copied().collect());
+                let new_nodes = CompactRegion::from(&region, allowed_in_covers);
+                base | new_nodes
+            })
+            .collect()
     }
 
     // Recombine given two colors (the corresponding regions must be adjacent)

@@ -630,11 +630,12 @@ impl<'g> Tiling<'g> {
     // this by assigning numbers to colors in the order they appear when traversing the graph
     // top-bottom, left-to-right.
     fn normalize(&mut self) {
-        let mut coloring = HashMap::<Color, Color>::new();
+        // use an array for re-coloring to avoid allocations
+        let mut coloring = [None; u8::MAX as usize + 1];
         let mut next_color = Color(NonZeroU8::new(1).unwrap());
 
         for c in self.color.iter_mut().flatten() {
-            *c = *coloring.entry(*c).or_insert_with(|| {
+            *c = *coloring[c.0.get() as usize].get_or_insert_with(|| {
                 let c = next_color;
                 next_color.increment();
                 c

@@ -100,7 +100,7 @@ fn check_happy_cover(
         .iter()
         .enumerate()
         .par_bridge()
-        .all(|(i, cover)| {
+        .map(|(i, cover)| {
             let region = cover.to_region(allowed_in_covers);
             let g = Graph::from(region);
             let tilings = Tiling::enumerate(&g, tile_size);
@@ -151,7 +151,8 @@ fn check_happy_cover(
             }
 
             success
-        });
+        })
+        .reduce(|| true, |a, b| a && b);
 
     timer.record_elapsed("metagraph_check");
 

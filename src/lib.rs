@@ -569,7 +569,7 @@ pub struct Tiling<'graph> {
     pub graph: &'graph Graph,
     // color of each node, represented as a 2D array, so we might generate
     // unused slots in this list but it makes lookups faster.
-    color: Vec<Option<Color>>,
+    color: Box<[Option<Color>]>,
     next_uncolored_cell: Option<Node>,
     next_color: Color,
 }
@@ -578,7 +578,7 @@ impl<'g> Tiling<'g> {
     fn of_graph(graph: &'g Graph) -> Tiling<'g> {
         Tiling {
             graph,
-            color: vec![None; graph.nodes.len()],
+            color: vec![None; graph.nodes.len()].into_boxed_slice(),
             next_uncolored_cell: Some(graph.nodes[0]),
             next_color: Color(NonZeroU8::new(1).unwrap()),
         }
@@ -696,7 +696,12 @@ impl<'g> Tiling<'g> {
                         // println!("generated:\n{g_new}");
                         g_new.normalize();
                         // println!("normalized:\n{g_new}");
-                        worklist.push(g_new);
+
+                        // deduplicating before pushing for potential memory
+                        // savings.
+                        if ! visited.contains(&g_new) {
+                            worklist.push(g_new);
+                        }
                     }
                 }
             }

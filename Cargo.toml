@@ -60,3 +60,7 @@ required-features = ["rendering"]
 name = "build-metagraph"
 path = "src/bin/build-metagraph.rs"
 required-features = ["rendering"]
+
+[[bin]]
+name = "check-given-covers"
+path = "src/bin/check-given-covers.rs"

@@ -23,7 +23,7 @@
 //! Coordinates are ordered in lexicographic order, and we normalize regions to
 //! start at the origin in many data structures below.
 
-use ahash::{HashMap, HashMapExt, HashSet, HashSetExt};
+use ahash::{HashMap, HashSet, HashSetExt};
 use itertools::Itertools;
 use rayon::iter::*;
 use std::{

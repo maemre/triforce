@@ -92,7 +92,7 @@ fn main() {
             let g = Graph::from(region.clone());
             let tilings = Tiling::enumerate(&g, tile_size);
             let complete = tilings
-                .iter()
+                .into_iter()
                 .filter(|t| t.is_complete())
                 .collect::<Vec<_>>();
 

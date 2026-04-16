@@ -117,7 +117,7 @@ fn check_happy_cover(
 
             tilings_tried.fetch_add(complete.len(), Ordering::SeqCst);
 
-            if i % 100 == 0 {
+            if i % 10 == 0 {
                 log::info!("Checked approximately {i} covers.");
             }
 

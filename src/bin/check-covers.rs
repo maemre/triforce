@@ -105,7 +105,7 @@ fn check_happy_cover(
             let g = Graph::from(region);
             let tilings = Tiling::enumerate(&g, tile_size);
             let complete = tilings
-                .iter()
+                .into_iter()
                 .filter(|g| g.is_complete())
                 .collect::<Vec<_>>();
 

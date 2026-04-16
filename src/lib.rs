@@ -356,7 +356,7 @@ mod test {
 }
 
 /// Representation of a region for serialization/deserialization.
-#[derive(Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct MaybeRegion(pub Vec<Node>);
 
 impl MaybeRegion {
@@ -699,7 +699,7 @@ impl<'g> Tiling<'g> {
 
                         // deduplicating before pushing for potential memory
                         // savings.
-                        if ! visited.contains(&g_new) {
+                        if !visited.contains(&g_new) {
                             worklist.push(g_new);
                         }
                     }

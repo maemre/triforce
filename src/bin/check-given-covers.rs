@@ -85,10 +85,13 @@ fn main() {
         .enumerate()
         .par_bridge()
         .map(|(i, maybe_region)| {
+            log::info!("starting cover {i} (offset from start)");
+
             let region = maybe_region
                 .clone()
                 .to_region(false)
                 .expect("cover in JSON file is not a valid region");
+
             let g = Graph::from(region.clone());
             let tilings = Tiling::enumerate(&g, tile_size);
             let complete = tilings
@@ -102,13 +105,6 @@ fn main() {
             }
 
             tilings_tried.fetch_add(complete.len(), Ordering::SeqCst);
-
-            if i % 10 == 0 {
-                log::info!(
-                    "Checked approximately {} covers (offset from range_start).",
-                    i
-                );
-            }
 
             let mut seen = HashSet::<Tiling>::new();
             let mut success = false;
@@ -135,6 +131,7 @@ fn main() {
                 success = true;
             }
 
+            println!("finished cover {i} (offset from start)");
             if !success {
                 println!("failing cover: {:?}", region);
             }

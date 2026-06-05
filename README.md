@@ -57,22 +57,38 @@ cargo run --release --bin gen-covers -- triangle=3 triangle=5 3
 
 ## Check covers
 
-The `check-covers` program takes 4 arguments:
+The `check-covers` program takes 4 arguments and checks all covers of a specific region:
 - A graph to cover (a.k.a., a fixed region).
 - Allowed extensions of the graph, this is a second graph.
 - A tile size.
 - An optional partial tiling
 
-Then, it enumerates all *minimal coverings* of the graph using tiles of the given size.
+Then, it enumerates all *minimal coverings* of the graph using tiles of the
+given size, and checks the metagraph reachability condition in the paper for
+each cover: Whether each connected component of the metagraph contains an
+extension of the given partial tiling.
 
-For example, the following command calculates all minimal coverings of a
-triangle of side-length 3 using 3-tiles that are contained in a triangle of
-side-length 5 where both triangles are hinged at the origin and facing the same
-direction.
+`check-given-covers` runs such a check in a given list of covers (it checks
+metagraph reachability for each cover in the list).  The main advantage of
+`check-given-covers` is to distribute and/or resume the work.  It takes the
+following arguments:
 
-```
-cargo run --release --bin gen-covers -- triangle=3 triangle=5 3
-```
+
+- A JSON file that lists all covers to check.
+- The tile size.
+- The desired partial tiling.
+- Two numbers indicating a slice of the list of covers to check.  Used for
+  running a check only on a portion of the list.
+
+### Running this program in parallel
+
+You can run the checks in parallel by setting the `RAYON_NUM_THREADS` number to
+the maximum number of parallel threads you want to run the checks on.  The
+process consumes a large amount of memory when checking large metagraphs
+together, so you need to make sure to have enough memory for each thread you
+are running.  In our experiments, using 32 threads on a machine with 1 TB
+memory was roughly the limit of parallelism for `shuffled.json` (see below)
+bound by memory usage.
 
 ## Graph file format
 
@@ -118,3 +134,8 @@ Additionally, `size-2/corner/` contains some cases for the bottom corner:
   the corner regions we check.  The versions with the `-cover` suffix are the
   allowed sets for each case.
 - `full-col-N.json` is the desired partial tiling desired for each corner case.
+
+### A list of covers
+
+- `shuffled.json` contains all potential covers for the fixed region used in
+  the inductive argument.

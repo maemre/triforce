@@ -36,49 +36,6 @@ So, the coordinates look like
 Nodes in the graph and each region are lexicographically ordered.
 
 Regions are normalized so that the smallest node is the origin.
-  
-# Usage
-
-The program `exp` runs some assorted experiments on triangles with specific side
-lengths.
-
-## Enumerating tilings
-
-The main program `triforce` takes a given graph and tile size, and it calculates
-the following:
-1. All partial tilings.
-2. All complete tilings (by filtering the above).
-3. Tilings reachable by the first tiling.
-
-There are two ways to give a graph:
-1. One can create a triangle of a given side length.
-2. Alternatively, the graph can be given as a list of nodes, provided by a JSON
-   file.
-   
-To see how to use the program in detail, run:
-
-```
-cargo run --release --bin triforce -- --help
-```
-
-Pass the arguments like below:
-
-```
-cargo run --release --bin triforce -- <graph> <tile-size>
-```
-
-For example, the command below runs it on a triangle of side-length 5 and tile size of 3.
-
-```
-cargo run --release --bin triforce -- triangle=5 3
-```
-
-
-The command below runs it on a graph stored in `fixed-region.json` and tile size of 3.
-
-```
-cargo run --release --bin triforce -- file=fixed-region.json 3
-```
 
 ## Generating coverings
 
@@ -86,6 +43,25 @@ The `gen-covers` program takes 3 arguments:
 - A graph to cover (a.k.a., a fixed region).
 - Allowed extensions of the graph, this is a second graph.
 - A tile size.
+
+Then, it enumerates all *minimal coverings* of the graph using tiles of the given size.
+
+For example, the following command calculates all minimal coverings of a
+triangle of side-length 3 using 3-tiles that are contained in a triangle of
+side-length 5 where both triangles are hinged at the origin and facing the same
+direction.
+
+```
+cargo run --release --bin gen-covers -- triangle=3 triangle=5 3
+```
+
+## Check covers
+
+The `check-covers` program takes 4 arguments:
+- A graph to cover (a.k.a., a fixed region).
+- Allowed extensions of the graph, this is a second graph.
+- A tile size.
+- An optional partial tiling
 
 Then, it enumerates all *minimal coverings* of the graph using tiles of the given size.
 
@@ -111,3 +87,34 @@ side-length 3 in the JSON format:
 ```
 [[0,0],[0,2],[0,4],[1,1],[1,3],[2,2]]
 ```
+
+## Partial tiling file format
+
+A (partial) tiling is just a list of tiles, encoded in JSON, e.g. `[tile1,
+tile2, ...]` where `tileN` is the list of nodes in the tile.
+
+For example, the following file describes 2 vertical tiles next to each other:
+
+```
+[[[0,0],[0,2]]
+,[[1,1],[1,3]]
+]
+```
+
+## Example graphs and tilings
+
+The repo contains some inputs to run experiments on.  All examples are
+contained in `size-2/`:
+
+- 1-lines.json -- 6-lines.json are partial tilings containing vertical tiles
+  next to each other that fit the corner of a right-facing triangle.
+
+- 9-clipped.json is the fixed region we use in our inductive argument in the paper.
+- 9-clipped-ind.json is the allowed set for the same inductive argument.
+
+Additionally, `size-2/corner/` contains some cases for the bottom corner:
+
+- `5-clipped.json`, `6-clipped.json`, `7.json`, `8.json`, `9-clipped.json` are
+  the corner regions we check.  The versions with the `-cover` suffix are the
+  allowed sets for each case.
+- `full-col-N.json` is the desired partial tiling desired for each corner case.

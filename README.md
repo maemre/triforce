@@ -1,6 +1,6 @@
 # triforce - hexagonal lattice enumerator
 
-# Representation of the lattice:
+## Representation of the lattice:
 
 - Nodes are represented by (x, y) coordinates.
 - y is even if x is even.
@@ -20,7 +20,7 @@ So, the coordinates look like
 
 ```
 
-# Main data structures:
+## Main data structures:
 
 - `Node`: A single graph node, represented as an (x, y) coordinate.
 - `Color`: Color (tile id) assigned to a node.
